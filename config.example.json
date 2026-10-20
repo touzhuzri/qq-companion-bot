@@ -1,0 +1,33 @@
+{
+  "botQQ": 10000,
+  "onebot": {
+    "wsUrl": "ws://127.0.0.1:3001",
+    "accessToken": "",
+    "staleTimeoutMs": 120000
+  },
+  "llm": {
+    "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+    "apiKey": "local",
+    "model": "qwen3-vl-4b"
+  },
+  "groups": {
+    "allow": []
+  },
+  "trigger": {
+    "debounceMs": 2000,
+    "cooldownMs": 8000
+  },
+  "history": {
+    "maxItems": 24
+  },
+  "vision": {
+    "enabled": true
+  },
+  "voice": {
+    "enabled": false,
+    "apiEndpoint": "http://127.0.0.1:9880/tts",
+    "refAudioPath": "",
+    "promptText": ""
+  },
+  "stateDir": "./state"
+}

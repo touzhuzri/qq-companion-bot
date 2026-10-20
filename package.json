@@ -1,0 +1,15 @@
+{
+  "name": "qq-bot-template",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "QQ 群 @ 触发的陪伴型 bot 模板:presence-turn 纪律层 + OpenAI 兼容模型 + 可选 GPT-SoVITS 语音",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/bot.js",
+    "test": "node --test test/*.test.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}

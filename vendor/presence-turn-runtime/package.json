@@ -1,0 +1,25 @@
+{
+  "name": "presence-turn-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "description": "The turn law companion chat is missing. No maid-service, no 你先忙, no empty parens, no silent rewrite. Classify once · strip, never invent · salvage ≤1 · mood carries. No backend.",
+  "keywords": [
+    "llm",
+    "chat",
+    "companion",
+    "dialogue",
+    "turn-taking",
+    "no-backend"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node scripts/test-runtime.mjs"
+  },
+  "devDependencies": {
+    "vite": "^8.0.12"
+  }
+}
