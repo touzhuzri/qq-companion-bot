@@ -148,14 +148,20 @@ MODEL_DIR=/path/to/model MODEL_FILE=xxx.gguf MMPROJ_FILE=mmproj.gguf ./scripts/s
 SnowLuma 需要单独安装，本项目只通过 OneBot 11 与它通信。
 
 1. 从 [SnowLuma Releases](https://github.com/SnowLuma/SnowLuma/releases) 下载对应平台的完整发行包，
-   解压到项目下的 `SnowLuma/`（已在 `.gitignore` 中，也可放到任意目录并用 `SNOWLUMA_DIR` 指定）。
-2. 启动 `launcher.sh`，打开 <http://127.0.0.1:5099>，用启动日志里的初始密码登录 WebUI。
+   解压到项目下（`SnowLuma/` 或 `SnowLuma-vX.Y.Z-<platform>/` 都可以，后者会被 `start.sh` 自动识别），
+   也可以用 `SNOWLUMA_DIR` 指定任意目录。
+2. 运行 `./start.sh` 或直接运行解压目录里的 `launcher.sh`；
+   打开 <http://127.0.0.1:5099>，用**终端启动日志里的初始用户名/密码**登录，并接受 EULA/PRIVACY。
 3. 在 WebUI 里接入并登录 QQ 小号（不要用大号）。
-4. 配置 **OneBot → WebSocket 服务端**：默认监听 `127.0.0.1:3001`，即 `config.json` 的
-   `onebot.wsUrl`。SnowLuma 默认会生成一个 access token，把它复制到 `onebot.accessToken`；
-   也可以在 SnowLuma 里清空 token，同时让 `accessToken` 保持 `""`。
+4. 配置 **OneBot → WebSocket 服务端**：监听 `127.0.0.1:3001`（对应 `onebot.wsUrl`）。
+   SnowLuma 默认会生成随机 access token；**推荐在 WebUI 里把它清空**，
+   这样和 `config.json` 的 `onebot.accessToken: ""` 一致。
+   如果保留 token，就把它复制到 `onebot.accessToken`，然后重启 bot。
 5. 把 bot 拉进群，设为普通成员即可；默认**只有 @ 它才会回话**，
    未 @ 旁听需要另外开启 `ambient`（见下文）。
+
+> 首次启动会打印类似 `user=admin password=...` 的临时凭据，改密后不会再次显示。
+> OneBot WS 端口 `3001` 只有在 QQ 账号接入后才会开始监听，bot 会自动重连。
 
 > 端口和 token 都以后台 WebUI 实际配置为准。OneBot 消息段、`send_group_msg` 等动作与 NapCat 一致，
 > bot 端不需要额外适配。

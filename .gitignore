@@ -24,3 +24,5 @@ models/**/*.gguf
 SnowLuma/
 SnowLuma-main/
 SnowLuma-main.zip
+SnowLuma-*/
+SnowLuma-*.tar.gz

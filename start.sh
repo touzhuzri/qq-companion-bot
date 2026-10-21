@@ -31,10 +31,20 @@ SOVITS_DIR="${SOVITS_DIR:-$ROOT/../GPT-SoVITS/repo}"
 
 SNOWLUMA_DIR="${SNOWLUMA_DIR:-$ROOT/../SnowLuma}"
 [ -d "$SNOWLUMA_DIR" ] || SNOWLUMA_DIR="$ROOT/SnowLuma"
+# 兼容 SnowLuma-vX.Y.Z-<platform>/ 这种按版本命名的解压目录
+if [ ! -x "$SNOWLUMA_DIR/launcher.sh" ]; then
+  for candidate in "$ROOT"/SnowLuma-*/launcher.sh "$ROOT"/../SnowLuma-*/launcher.sh; do
+    if [ -x "$candidate" ]; then
+      SNOWLUMA_DIR="$(cd "$(dirname "$candidate")" && pwd)"
+      break
+    fi
+  done
+fi
 
 mkdir -p "$LOG_DIR"
 
 PIDS=()
+CLEANED=0
 track_pid() {
   case "${1:-}" in
     '' | 0 | 1 | *[!0-9]*) return ;;
@@ -43,6 +53,8 @@ track_pid() {
 }
 
 cleanup() {
+  [ "$CLEANED" = "1" ] && return
+  CLEANED=1
   echo ""
   echo "==> 正在关闭所有服务…"
   for pid in "${PIDS[@]:-}"; do
@@ -175,13 +187,23 @@ fi
 
 # ---------- 4. SnowLuma ----------
 echo "==> [4/4] SnowLuma QQ 网关"
+echo "    WebUI: http://127.0.0.1:5099"
+echo "    首次运行: 登录 → 接受 EULA → 接入 QQ → 配置 OneBot WS 127.0.0.1:3001"
+echo "    access token 建议留空以匹配 config.json;若保留 token,请复制到 onebot.accessToken"
 echo "------------------------------------------"
+SNOWLUMA_PID=""
 if [ -n "$SNOWLUMA_CMD" ]; then
-  sh -c "$SNOWLUMA_CMD"
+  sh -c "$SNOWLUMA_CMD" &
+  SNOWLUMA_PID=$!
 elif [ -x "$SNOWLUMA_DIR/launcher.sh" ]; then
-  (cd "$SNOWLUMA_DIR" && ./launcher.sh)
+  (
+    cd "$SNOWLUMA_DIR" || exit 1
+    exec ./launcher.sh
+  ) &
+  SNOWLUMA_PID=$!
 elif command -v snowluma > /dev/null 2>&1; then
-  snowluma
+  snowluma &
+  SNOWLUMA_PID=$!
 else
   echo "!! 未找到 SnowLuma 发行包。" >&2
   echo "   从 https://github.com/SnowLuma/SnowLuma/releases 下载后解压到:" >&2
@@ -189,5 +211,8 @@ else
   echo "   或用 SNOWLUMA_DIR=/path/to/SnowLuma 指定。" >&2
   echo "==> 其余服务已在后台运行,日志目录: $LOG_DIR" >&2
   echo "    Ctrl+C 结束全部服务。" >&2
-  wait
+  while :; do sleep 3600; done
 fi
+
+track_pid "$SNOWLUMA_PID"
+wait "$SNOWLUMA_PID"
