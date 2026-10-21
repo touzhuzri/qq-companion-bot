@@ -192,7 +192,10 @@ echo "    首次运行: 登录 → 接受 EULA → 接入 QQ → 配置 OneBot W
 echo "    access token 建议留空以匹配 config.json;若保留 token,请复制到 onebot.accessToken"
 echo "------------------------------------------"
 SNOWLUMA_PID=""
-if [ -n "$SNOWLUMA_CMD" ]; then
+if port_busy 5099; then
+  echo "    已在运行,跳过(外部启动的 SnowLuma)"
+  while :; do sleep 3600; done
+elif [ -n "$SNOWLUMA_CMD" ]; then
   sh -c "$SNOWLUMA_CMD" &
   SNOWLUMA_PID=$!
 elif [ -x "$SNOWLUMA_DIR/launcher.sh" ]; then

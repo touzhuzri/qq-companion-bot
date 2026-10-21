@@ -503,6 +503,18 @@ npm run smoke    # 端到端对话，需要模型在线
 
 ## 常见问题
 
+**SnowLuma 报 `COMPONENT_LOAD_FAILED` / `component loading failed`？**
+Linux 下 SnowLuma 通过 ptrace 把 Hook 注入 QQ。若 `kernel.yama.ptrace_scope > 0`，
+同用户但非父子进程的注入会被拒绝（`/proc/<QQ pid>/mem` 也会提示权限不足）。临时处理：
+
+```bash
+sudo sysctl -w kernel.yama.ptrace_scope=0
+```
+
+然后在 SnowLuma WebUI 里重新加载/重连 QQ 进程。需要持久化可写入
+`/etc/sysctl.d/99-snowluma.conf`；注意这会降低本机进程隔离，建议只在个人机器上使用。
+Docker 部署则需要 `cap_add: SYS_PTRACE` 和 `security_opt: seccomp=unconfined`。
+
 **@ 了但没反应？**
 检查：`groups.allow` 是否包含该群、是否真的 @ 到了 bot、日志里是否有 `OneBot 已连接`。
 没有冷却机制；如果上一轮还在生成，新消息会排队等回合锁。SnowLuma 掉线或重启时
