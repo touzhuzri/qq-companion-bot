@@ -21,6 +21,8 @@ export async function prepareRuntimeLlm(config) {
     host: llm.bridge?.host,
     port: llm.bridge?.port,
     timeoutMs: llm.timeoutMs,
+    thinking: llm.thinking,
+    maxTokens: llm.maxTokens,
   })
   const url = await bridge.start()
 

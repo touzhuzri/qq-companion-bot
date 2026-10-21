@@ -238,6 +238,8 @@ SNOWLUMA_DIR=/path/to/SnowLuma \
 | `llm.model` | 取决于 provider | 文字模型名；智谱免费版用 `glm-4.5-flash` |
 | `llm.anthropicVersion` | `2023-06-01` | Anthropic 协议版本头 |
 | `llm.timeoutMs` | `60000` | 上游请求超时 |
+| `llm.thinking` | `disabled` | `disabled` 关闭 GLM 的 thinking，避免推理块吃掉回复 token |
+| `llm.maxTokens` | `512` | 上游 `max_tokens` 下限；运行时请求更小时抬到这个值 |
 | `llm.bridge.host` / `port` | `127.0.0.1` / `8090` | Anthropic→OpenAI 本地桥地址，仅本机可访问 |
 | `vision.llm` | `null` | 独立的视觉端点对象；文字用 Anthropic 协议时**必须**单独配置 |
 | `vision.enabled` | `true` | 是否用 Qwen 等视觉模型读表情包 |
@@ -246,11 +248,11 @@ SNOWLUMA_DIR=/path/to/SnowLuma \
 | `privateChat.allow` | `[]` | 允许私聊的 QQ 号；开启时必填，空列表会启动报错 |
 | `trigger.debounceMs` | `2000` | 触发后等待合并后续消息的窗口 |
 | `reply.delayMinMs` / `delayMaxMs` | `4000` / `8000` | API 返回后、回复前的随机等待，每轮只等一次 |
-| `reply.segmentMinChars` | `12` | 单条最少字数（太短的尾巴会并回上一条） |
-| `reply.segmentTargetChars` | `24` | 单条理想字数，接近时优先换条 |
-| `reply.segmentMaxChars` | `45` | 单条硬上限 |
-| `reply.segmentMaxMessages` | `6` | 一轮最多分几条 |
-| `reply.segmentGapMinMs` / `reply.segmentGapMaxMs` | `1200` / `2800` | 分段之间的随机间隔 |
+| `reply.segmentMinChars` | `6` | 单条最少字数（太短的尾巴会并回上一条） |
+| `reply.segmentTargetChars` | `12` | 单条理想字数，接近时优先换条 |
+| `reply.segmentMaxChars` | `20` | 单条硬上限；越小越容易看出分段 |
+| `reply.segmentMaxMessages` | `4` | 一轮最多分几条 |
+| `reply.segmentGapMinMs` / `reply.segmentGapMaxMs` | `1000` / `2200` | 分段之间的随机间隔 |
 | `ambient.enabled` | `false` | 是否开启群聊旁听接话 |
 | `ambient.groups` | `[]` | **指定**允许旁听的群号；开启时必填 |
 | `ambient.keywords` | `[]` | 关键词预筛；空则直接交给模型判定 |
@@ -370,14 +372,14 @@ npm run smoke -- "在干嘛呢"    # 单句自测
 
 1. 模型返回后，**只等一次**随机 4–8 秒（`reply.delayMinMs` / `delayMaxMs`）；
 2. 把回复按句号、问号、逗号等切成语义完整的短句；
-3. 依次发送，分段之间随机等 1.2–2.8 秒（`segmentGapMinMs` / `segmentGapMaxMs`）；
+3. 依次发送，分段之间随机等 1.0–2.2 秒（`segmentGapMinMs` / `segmentGapMaxMs`）；
 4. 没有回复冷却：上一轮刚结束，下一轮 @ 仍然会正常处理。
 
 切分逻辑移植自 [qikou（气口）](https://github.com/Grabrun/qikou)（MIT）：
 
-- 单条硬上限 `segmentMaxChars`（默认 45 字），理想长度 `segmentTargetChars`（24）；
+- 单条硬上限 `segmentMaxChars`（默认 20 字），理想长度 `segmentTargetChars`（12）；
 - 引号、括号内的标点不切；`Mr.` / `e.g.` 等英文缩写不当句末；
-- 一轮最多 `segmentMaxMessages` 条（默认 6），超了会合并最短的相邻两条；
+- 一轮最多 `segmentMaxMessages` 条（默认 4），超了会合并最短的相邻两条；
 - 太短的尾巴会并回上一条，避免出现「嗯。」这种单字气泡。
 
 觉得太碎或太慢，调 `reply` 下的参数即可，不需要改代码。
@@ -475,6 +477,10 @@ npm run smoke -- "在干嘛呢"    # 单句自测
 - `provider: "zhipu"` / `"anthropic"` 时，bot 启动会在 `llm.bridge.port`（默认 8090）
   起一个本地桥，把运行时的 OpenAI 请求翻译成 Anthropic Messages，再转回 OpenAI 响应。
 - 桥只监听 `127.0.0.1`，并要求一个进程内随机 token；你的智谱 key 不会传给运行时或日志。
+- GLM-4.5-flash 默认会先输出 `thinking` 块。桥默认发送
+  `thinking: { type: "disabled" }`，否则推理内容会吃掉回复的 token 预算，
+  表现为回复很短甚至为空；同时 `llm.maxTokens` 会把上游上限抬到 512。
+  如果某个兼容端点不支持关闭 thinking，把 `llm.thinking` 改成 `"auto"`。
 - `apiKeys` 数组按顺序轮询；某个 key 返回 429/401/5xx 时自动换下一个，
   并对该 key 冷却一段时间（429 冷却 30s，鉴权失败冷却 5 分钟）。
 - 请求日志只记录 `key#1`、`key#2`，不打印 key 内容。
@@ -578,7 +584,10 @@ runtime 也会从对话里提取并记忆用户自述的事实，多聊几轮会
 再确认文字模型能正常响应判定请求。
 
 **回复为什么像小作文？**
-检查 `reply.segmentMaxChars`（默认 45）和 `segmentMaxMessages`（默认 6）。
+先看日志里的 `segments=` 和 `lengths=`：如果只有 1 段，说明模型生成的字数本来就低于
+`reply.segmentMaxChars`（默认 20）。可以把上限再调小，或调高
+`persona.format.minTotal`。GLM-4.5-flash 本身偏简洁；想更饱满可以换 `glm-4.5` /
+`glm-4.5-air`，或在 `src/persona.js` 的 `format` 里把 `minSentences` / `minTotal` 调高。
 如果模型一次就输出了一大段且没有标点，只会按长度硬切，读起来仍会偏机械，
 可以在 persona 的例句里示范短句。
 

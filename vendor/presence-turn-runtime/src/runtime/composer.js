@@ -128,10 +128,29 @@ export function dedupeIdenticalReplies(replies = []) {
   })
 }
 
-export function getReplyFormatInstructions(maxReplyCount = 2) {
-  const maxCount = Math.min(2, Math.max(1, Number(maxReplyCount) || 2))
+export function getReplyFormatInstructions(maxReplyCount = 2, format = {}) {
+  const fallbackMax = Math.min(2, Math.max(1, Number(maxReplyCount) || 2))
+  const customized = Boolean(format && Object.keys(format).length)
+  const maxSentences = Math.min(4, Math.max(1, Number(format?.maxSentences) || fallbackMax))
+  const minSentences = Math.min(
+    maxSentences,
+    Math.max(1, Number(format?.minSentences) || 1),
+  )
+  const minTotal = Math.max(0, Math.min(600, Number(format?.minTotal) || 0))
+  const maxTotal = Math.max(minTotal || 40, Math.min(800, Number(format?.maxTotal) || 240))
+  const minSentenceChars = Math.max(0, Math.min(200, Number(format?.minSentenceChars) || 0))
+  const maxSentenceChars = Math.max(
+    minSentenceChars || 100,
+    Math.min(300, Number(format?.maxSentenceChars) || 100),
+  )
+  const lengthLine = minTotal > 0 ? `整轮约${minTotal}～${maxTotal}字` : `整轮≤${maxTotal}字`
+  const sentenceLine =
+    minSentenceChars > 0
+      ? `每句约${minSentenceChars}～${maxSentenceChars}字；`
+      : ''
+  const shapeLine = customized ? '连成一段，不要换行' : '若要连发两条，用换行分开'
+
   return `【输出】直接写角色要说的话，不要 json、不要 markdown、不要解释、不要角色名前缀。
 禁止任何括号动作/神态/心理描写（如（顿了顿）（笑）（歪头））；只写说出口的台词。
-1～${maxCount}句即可；像熟人闲聊；完整句；忌只回嗯/好/在；单条约40～100字，整轮≤240。
-若要连发两条，用换行分开。`
+${minSentences}～${maxSentences}句；${sentenceLine}${shapeLine}；像熟人闲聊；完整句；忌只回嗯/好/在；${lengthLine}。`
 }

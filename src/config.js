@@ -22,6 +22,10 @@ export const DEFAULTS = {
     apiKeys: [],
     anthropicVersion: '2023-06-01',
     timeoutMs: 60000,
+    /** 聊天时关闭 thinking,避免推理块吃掉回复预算 */
+    thinking: 'disabled',
+    /** 上游 max_tokens 下限;运行时请求更小时抬到这个值 */
+    maxTokens: 512,
     /** 本地 Anthropic→OpenAI 桥,仅 text provider 为 anthropic/zhipu 时启动 */
     bridge: {
       host: '127.0.0.1',
@@ -46,13 +50,13 @@ export const DEFAULTS = {
     delayMinMs: 4000,
     delayMaxMs: 8000,
     /** 按长度切分:单条最少/理想/最多字数,单轮最多几条 */
-    segmentMinChars: 12,
-    segmentTargetChars: 24,
-    segmentMaxChars: 45,
-    segmentMaxMessages: 6,
+    segmentMinChars: 6,
+    segmentTargetChars: 12,
+    segmentMaxChars: 20,
+    segmentMaxMessages: 4,
     /** 同一条回复的多个分段之间,模拟打字的短间隔 */
-    segmentGapMinMs: 1200,
-    segmentGapMaxMs: 2800,
+    segmentGapMinMs: 1000,
+    segmentGapMaxMs: 2200,
   },
   ambient: {
     /** 旁听接话默认关闭;开启后只对 groups 里的群生效 */

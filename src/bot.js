@@ -287,14 +287,16 @@ async function main() {
       return
     }
 
-    logDone(result)
+    logDone(result, delivery)
   }
 
-  function logDone(result) {
+  function logDone(result, delivery) {
+    const lengths = (delivery?.segments || []).map((segment) => segment.length).join('/')
     logger.info(
-      `回复完成 | kind=${result.policy.turnKind} salvage=${
-        result.salvage.used ? (result.salvage.adopted ? 'used' : 'rejected') : 'none'
-      } affect=${JSON.stringify(result.presence.affect ?? {})}`,
+      `回复完成 | mode=${delivery?.mode || '?'} segments=${delivery?.segments?.length || 0} ` +
+        `lengths=${lengths || '-'} | kind=${result.policy.turnKind} salvage=${
+          result.salvage.used ? (result.salvage.adopted ? 'used' : 'rejected') : 'none'
+        } affect=${JSON.stringify(result.presence.affect ?? {})}`,
     )
   }
 

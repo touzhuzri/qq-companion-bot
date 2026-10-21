@@ -27,6 +27,8 @@ export class AnthropicBridge {
   #port
   #actualPort
   #timeoutMs
+  #thinking
+  #maxTokens
   #token
   #server = null
   #nextIndex = 0
@@ -40,6 +42,8 @@ export class AnthropicBridge {
     host = '127.0.0.1',
     port = 8090,
     timeoutMs = 60000,
+    thinking = 'auto',
+    maxTokens = 0,
     token,
   } = {}) {
     this.#endpoint = endpoint
@@ -49,6 +53,8 @@ export class AnthropicBridge {
     this.#host = host
     this.#port = port
     this.#timeoutMs = timeoutMs
+    this.#thinking = thinking
+    this.#maxTokens = maxTokens
     this.#token = token || randomBytes(24).toString('hex')
     this.#cooldownUntil = this.#apiKeys.map(() => 0)
   }
@@ -142,7 +148,10 @@ export class AnthropicBridge {
   }
 
   async #complete(body) {
-    const request = toAnthropicRequest(body, this.#model)
+    const request = toAnthropicRequest(body, this.#model, {
+      thinking: this.#thinking,
+      maxTokens: this.#maxTokens,
+    })
     const payload = await this.#callUpstream(request)
     return toOpenAiResponse(payload, this.#model)
   }
@@ -215,7 +224,11 @@ export function messagesUrl(endpoint) {
   return base.endsWith('/v1/messages') ? base : `${base}/v1/messages`
 }
 
-export function toAnthropicRequest(body = {}, fallbackModel) {
+export function toAnthropicRequest(
+  body = {},
+  fallbackModel,
+  { thinking = 'auto', maxTokens = 0 } = {},
+) {
   const systemParts = []
   const messages = []
 
@@ -232,13 +245,16 @@ export function toAnthropicRequest(body = {}, fallbackModel) {
 
   const request = {
     model: body.model || fallbackModel,
-    max_tokens: Number(body.max_tokens) || 512,
+    max_tokens: Math.max(Number(body.max_tokens) || 512, Number(maxTokens) || 0),
     messages,
     stream: false,
   }
   if (systemParts.join('\n\n').trim()) request.system = systemParts.join('\n\n').trim()
   if (Number.isFinite(body.temperature)) request.temperature = body.temperature
   if (Number.isFinite(body.top_p)) request.top_p = body.top_p
+  // GLM-4.5 等模型默认先输出 thinking,会吃掉回复的 token 预算。
+  // 聊天场景显式关闭,让预算全部用于说出口的台词。
+  if (thinking === 'disabled') request.thinking = { type: 'disabled' }
   return request
 }
 

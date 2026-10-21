@@ -3,17 +3,25 @@ import { buildTurnConstraintCard } from './userTurnPolicy.js'
 import { getReplyFormatInstructions } from './composer.js'
 import { buildMemoryPrompt } from './memory.js'
 
-export function buildDialogueRhythm(turnKind = 'default') {
+export function buildDialogueRhythm(turnKind = 'default', format = {}) {
+  const maxSentences = Math.min(4, Math.max(1, Number(format?.maxSentences) || 2))
+  const minSentences = Math.min(
+    maxSentences,
+    Math.max(1, Number(format?.minSentences) || 1),
+  )
+  const minTotal = Math.max(0, Math.min(600, Number(format?.minTotal) || 0))
+  const maxTotal = Math.max(minTotal || 40, Math.min(800, Number(format?.maxTotal) || 240))
+  const length = minTotal > 0 ? `整轮约${minTotal}～${maxTotal}字` : `整轮≤${maxTotal}字`
   const lines = [
     '【短聊节奏】',
-    '像熟人闲话一句：1～2 句；单条约 40～100 字，整轮 ≤240。',
+    `像熟人闲话：${minSentences}～${maxSentences}句，${length}。`,
     '必须有说出口的人话；禁止任何括号动作旁白；只输出台词本身。',
   ]
   if (turnKind === 'greeting') {
-    lines.push('招呼轮更短，不要寒暄堆砌。')
+    lines.push('招呼轮可以短一些，但至少说一句完整的话。')
   }
   if (turnKind === 'short_ack') {
-    lines.push('短附和：轻轻往下接半步，不要复述上一句。')
+    lines.push('短附和：接住上一句，再补半句；不要只回嗯/好。')
   }
   return lines.join('\n')
 }
@@ -36,9 +44,9 @@ export function compilePrompt({
     pack.voiceHint,
     buildTurnConstraintCard(policy),
     presence?.promptText || '',
-    buildDialogueRhythm(policy?.turnKind),
+    buildDialogueRhythm(policy?.turnKind, pack.format || {}),
     buildMemoryPrompt(memories),
-    getReplyFormatInstructions(presence?.maxBubbles || 2),
+    getReplyFormatInstructions(presence?.maxBubbles || 2, pack.format || {}),
   ]
     .filter(Boolean)
     .join('\n\n')

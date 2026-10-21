@@ -73,6 +73,19 @@ test('translates OpenAI messages into Anthropic Messages', () => {
   ])
 })
 
+test('disables thinking and raises the output token floor', () => {
+  const requestBody = toAnthropicRequest(
+    {
+      messages: [{ role: 'user', content: '在吗' }],
+      max_tokens: 100,
+    },
+    'glm-4.5-flash',
+    { thinking: 'disabled', maxTokens: 512 },
+  )
+  assert.equal(requestBody.max_tokens, 512)
+  assert.deepEqual(requestBody.thinking, { type: 'disabled' })
+})
+
 test('bridge rotates keys on 429 and converts the response back', async () => {
   const originalFetch = globalThis.fetch
   const upstreamCalls = []

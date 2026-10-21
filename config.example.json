@@ -12,6 +12,8 @@
     "apiKeys": ["", ""],
     "anthropicVersion": "2023-06-01",
     "timeoutMs": 60000,
+    "thinking": "disabled",
+    "maxTokens": 512,
     "bridge": {
       "host": "127.0.0.1",
       "port": 8090
@@ -39,12 +41,12 @@
   "reply": {
     "delayMinMs": 4000,
     "delayMaxMs": 8000,
-    "segmentMinChars": 12,
-    "segmentTargetChars": 24,
-    "segmentMaxChars": 45,
-    "segmentMaxMessages": 6,
-    "segmentGapMinMs": 1200,
-    "segmentGapMaxMs": 2800
+    "segmentMinChars": 6,
+    "segmentTargetChars": 12,
+    "segmentMaxChars": 20,
+    "segmentMaxMessages": 4,
+    "segmentGapMinMs": 1000,
+    "segmentGapMaxMs": 2200
   },
   "ambient": {
     "enabled": false,

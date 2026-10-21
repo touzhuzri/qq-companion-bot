@@ -36,8 +36,11 @@ SOFTWARE.
 
 ## presence-turn-runtime
 
-`vendor/presence-turn-runtime/` 为上游源码原样内置，许可文本见
-`vendor/presence-turn-runtime/LICENSE`（MIT）。
+`vendor/presence-turn-runtime/` 来自上游，许可文本见
+`vendor/presence-turn-runtime/LICENSE`（MIT）。本仓库对
+`src/runtime/composer.js` 和 `src/runtime/compilePrompt.js` 做了少量修改：
+支持通过 persona 的 `format` 字段控制回复句数、单句字数和整轮字数，
+其余逻辑保持上游原样。
 
 ## 未随仓库分发的项目
 
