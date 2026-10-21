@@ -57,7 +57,7 @@ QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
 │   └── start-llama.sh    启动本地 llama-server（文本 + 视觉）
 ├── test/                 单元测试（不需要模型）
 ├── config.example.json   配置模板
-├── start-all.sh          一键启动：模型 → 语音(可选) → bot → SnowLuma
+├── start.sh              一键启动：Qwen 视觉 → GPT-SoVITS → bot → SnowLuma
 └── state/                运行数据（按群文件，首次运行自动生成）
 ```
 
@@ -166,18 +166,35 @@ SnowLuma 需要单独安装，本项目只通过 OneBot 11 与它通信。
 npm start
 ```
 
-或者一键启动（模型 + 可选语音 + bot + SnowLuma）：
+或者一键启动（Qwen 视觉 + GPT-SoVITS 语音 + bot + SnowLuma）：
 
 ```bash
-SNOWLUMA_DIR=/path/to/SnowLuma ./start-all.sh
+./start.sh
 ```
 
-- `SNOWLUMA_DIR` 指向 SnowLuma 解压目录（默认 `./SnowLuma`）；也可以用 `SNOWLUMA_CMD="node dist/index.mjs"` 直接指定启动命令
-- 设置 `SOVITS_DIR=/path/to/GPT-SoVITS/repo` 才会顺带启动语音服务
-- 文字模型默认走智谱远程端点；`start-all.sh` 仍会启动本地 Qwen 供表情包识别。
-  不需要本地视觉模型时用 `START_LLAMA=0 ./start-all.sh`（表情包会退化为通用描述）
-- SnowLuma 的 WebUI 在 <http://127.0.0.1:5099>，QQ 登录与 OneBot 配置都在那里完成
-- bot 的语音开关在 <http://127.0.0.1:5100>，可以在运行中随时切换文字/语音模式
+`start.sh` 会依次做这些事：
+
+1. 校验 `config.json`
+2. 启动本地 Qwen 视觉模型（`llama-server :8080`）
+3. 启动 GPT-SoVITS `api_v2`（`:9880`，使用现有 `tts_infer.yaml` 里的权重）
+4. 启动 bot（Anthropic 桥 `:8090`、语音控制页 `:5100`）
+5. 前台启动 SnowLuma（WebUI `:5099`）
+
+默认从项目同级目录找模型/语音/SnowLuma，也可以用环境变量覆盖：
+
+```bash
+MODEL_DIR=/path/to/qwen3-vl-4b \
+SOVITS_DIR=/path/to/GPT-SoVITS/repo \
+SNOWLUMA_DIR=/path/to/SnowLuma \
+./start.sh
+```
+
+- 跳过视觉或语音：`START_VISION=0 ./start.sh` / `START_TTS=0 ./start.sh`
+- SnowLuma 没安装时，其余服务会继续在后台运行，脚本会打印下载地址并保持等待；
+  按 Ctrl+C 一起退出
+- 文字模型走智谱远程端点；本地 Qwen 只负责读表情包
+- 语音开关在 <http://127.0.0.1:5100>，可在文字/语音模式间随时切换
+- 日志在 `logs/vision.log`、`logs/tts.log`、`logs/bot.log`
 
 启动成功的标志是日志出现 `OneBot 已连接`。
 
