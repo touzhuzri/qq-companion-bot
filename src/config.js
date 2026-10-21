@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { assertLlmUsable, resolveLlm, resolveVisionLlm } from './llm.js'
 
 export const DEFAULTS = {
   onebot: {
@@ -10,10 +11,12 @@ export const DEFAULTS = {
     /** 超过该毫秒数没收到任何帧(含心跳)就判定假死并重连 */
     staleTimeoutMs: 120000,
   },
+  /**
+   * 文字模型;endpoint/apiKey 由 provider 预设补齐,
+   * 这里不要放默认端点,否则用户只写 provider: "openai" 时会被本地端点覆盖。
+   */
   llm: {
-    endpoint: 'http://127.0.0.1:8080/v1/chat/completions',
-    modelsEndpoint: 'http://127.0.0.1:8080/v1/models',
-    apiKey: 'local',
+    provider: 'local',
     model: 'qwen3-vl-4b',
   },
   groups: {
@@ -21,8 +24,41 @@ export const DEFAULTS = {
     allow: [],
   },
   trigger: {
+    /** 合并同一人连续消息的窗口,不是回复冷却 */
     debounceMs: 2000,
-    cooldownMs: 8000,
+  },
+  reply: {
+    /** API 返回后,回复前只等一次 4~8 秒 */
+    delayMinMs: 4000,
+    delayMaxMs: 8000,
+    /** 按长度切分:单条最少/理想/最多字数,单轮最多几条 */
+    segmentMinChars: 12,
+    segmentTargetChars: 24,
+    segmentMaxChars: 45,
+    segmentMaxMessages: 6,
+    /** 同一条回复的多个分段之间,模拟打字的短间隔 */
+    segmentGapMinMs: 1200,
+    segmentGapMaxMs: 2800,
+  },
+  ambient: {
+    /** 旁听接话默认关闭;开启后只对 groups 里的群生效 */
+    enabled: false,
+    groups: [],
+    /** 非空时先做关键词预筛,再用模型判定 */
+    keywords: [],
+    useLlmJudge: true,
+    /** 群消息静止多久后判定,避免对半句话接话 */
+    debounceMs: 3000,
+    /** 同一群两次旁听接话的最小间隔,防止刷屏(不是回复冷却) */
+    minIntervalMs: 60000,
+    maxContextMessages: 8,
+    judgeTimeoutMs: 8000,
+  },
+  control: {
+    /** bot 自带语音开关控制页 */
+    enabled: true,
+    host: '127.0.0.1',
+    port: 5100,
   },
   history: {
     maxItems: 24,
@@ -31,6 +67,8 @@ export const DEFAULTS = {
     enabled: true,
     maxImageBytes: 10 * 1024 * 1024,
     fetchTimeoutMs: 15000,
+    /** 独立视觉端点;留空则回退到文字 llm */
+    llm: null,
   },
   voice: {
     /** 开启前必须填 refAudioPath / promptText（见 README「语音」一节） */
@@ -63,14 +101,26 @@ export function loadConfig(configPath = './config.json') {
   }
 
   const merged = deepMerge(DEFAULTS, fileRaw)
+  merged.llm = resolveLlm(merged.llm)
+  merged.vision.llm = resolveVisionLlm(merged)
 
   const missing = []
   if (!merged.onebot?.wsUrl) missing.push('onebot.wsUrl')
   if (!merged.botQQ) missing.push('botQQ')
-  if (!merged.llm?.endpoint || !merged.llm?.model) missing.push('llm.endpoint / llm.model')
   if (missing.length) {
     throw new Error(`配置缺少必填项: ${missing.join(', ')}`)
   }
+
+  // 文本模型与视觉模型各自校验,任一不可用都在启动时失败
+  assertLlmUsable(merged.llm, 'llm')
+  if (merged.vision?.enabled) assertLlmUsable(merged.vision.llm, 'vision.llm')
+
+  if (merged.ambient?.enabled && !(merged.ambient.groups || []).length) {
+    throw new Error(
+      'ambient.enabled 为 true 但 ambient.groups 为空。请填写允许旁听接话的群号。',
+    )
+  }
+
   if (merged.voice?.enabled) {
     const voiceMissing = []
     if (!merged.voice.apiEndpoint) voiceMissing.push('voice.apiEndpoint')

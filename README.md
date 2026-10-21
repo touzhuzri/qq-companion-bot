@@ -19,13 +19,15 @@ QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
 ## 特性
 
 - **零 npm 依赖**：Node ≥ 22 自带 WebSocket / fetch，clone 下来直接跑。
-- **只在被 @ 时回复**：连续消息（默认 2 秒内、同一人）自动合并成一轮；同群有冷却。
+- **@ 回复 + 群聊旁听**：默认只回 @；可在指定群开启旁听，关键词预筛 + 文字模型判定后自然接话。
+- **没有回复冷却**：连续消息（默认 2 秒内、同一人）仍会合并，但不会因为「刚回过」而丢弃新一轮。
+- **像真人一样分条**：API 返回后随机等 4–8 秒再开口，长句按标点/长度切成多条，段间 1.2–2.8 秒。
 - **按群隔离**：上下文、情绪叠态、记忆、表情包缓存都按群号分开落盘，互不串台。
 - **对话纪律层**：禁止括号动作旁白、禁止仆人式讨好、禁止「你先忙」式打发；
   模型跑偏时会自动纠正一次（salvage ≤ 1）。
-- **模型自由**：本地 llama.cpp / vLLM，或任何 OpenAI 兼容在线 API，改 `llm.endpoint` 即可。
-- **图片识别**：群里发表情包时，用同一个多模态模型压成一句话喂给对话；同图只识别一次。
-- **语音可选**：接 GPT-SoVITS `api_v2` 合成语音，失败自动降级为纯文字。
+- **文字 / 视觉模型分离**：两个端点各司其职，provider 预留 `local` / `ollama` / `openai` / `openai-compatible`。
+- **图片识别**：群里发表情包时，用视觉模型压成一句话喂给对话；同图只识别一次。
+- **语音可选**：bot 自带本地控制页切换语音；语音模式只发语音、不发文字、不加等待，失败自动降级为文字。
 
 ## 目录结构
 
@@ -33,8 +35,13 @@ QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
 .
 ├── src/
 │   ├── persona.js        ★ 角色人设（唯一需要大改的文件）
-│   ├── bot.js            主流程：@触发 → 合并 → 冷却 → sendTurn → 分条发送
+│   ├── bot.js            主流程：触发/旁听 → sendTurn → 延迟 → 分段发送
 │   ├── config.js         配置加载与校验（fail fast）
+│   ├── llm.js            文字/视觉端点解析（local / ollama / openai / 兼容端点）
+│   ├── split.js          按标点和长度切分台词（移植自 qikou，MIT）
+│   ├── reply.js          延迟、语音/文字投递与分段发送
+│   ├── ambient.js        群聊旁听的相关度判定
+│   ├── control.js        语音开关本地控制页
 │   ├── onebot.js         OneBot 11 正向 WebSocket 客户端（兼容 SnowLuma；心跳假死检测、指数退避重连）
 │   ├── messageParser.js  OneBot 消息段解析（@判定 / 文字 / 图片）
 │   ├── contextStore.js   每群滚动短上下文
@@ -134,6 +141,7 @@ SNOWLUMA_DIR=/path/to/SnowLuma ./start-all.sh
 - 设置 `SOVITS_DIR=/path/to/GPT-SoVITS/repo` 才会顺带启动语音服务
 - 使用远程模型时用 `START_LLAMA=0 ./start-all.sh`
 - SnowLuma 的 WebUI 在 <http://127.0.0.1:5099>，QQ 登录与 OneBot 配置都在那里完成
+- bot 的语音开关在 <http://127.0.0.1:5100>，可以在运行中随时切换文字/语音模式
 
 启动成功的标志是日志出现 `OneBot 已连接`。
 
@@ -145,15 +153,32 @@ SNOWLUMA_DIR=/path/to/SnowLuma ./start-all.sh
 | `onebot.wsUrl` | `ws://127.0.0.1:3001` | SnowLuma OneBot WS 地址 |
 | `onebot.accessToken` | `""` | SnowLuma WebUI 里的 access token，没设就留空 |
 | `onebot.staleTimeoutMs` | `120000` | 多久没收到任何帧就判定假死并重连 |
-| `llm.endpoint` | `http://127.0.0.1:8080/v1/chat/completions` | OpenAI 兼容对话端点 |
-| `llm.apiKey` | `local` | 本地服务随便填；在线 API 填真 key |
-| `llm.model` | `qwen3-vl-4b` | 模型名 |
+| `llm.provider` | `local` | `local` / `ollama` / `openai` / `openai-compatible` |
+| `llm.endpoint` | `http://127.0.0.1:8080/v1/chat/completions` | 文字模型端点 |
+| `llm.apiKey` | `local` | 本地服务随便填；`openai` 自动读 `OPENAI_API_KEY` |
+| `llm.model` | `qwen3-vl-4b` | 文字模型名 |
+| `vision.llm` | `null` | 独立的视觉端点对象；不填则回退到 `llm` |
+| `vision.enabled` | `true` | 是否识别图片；视觉端点必须是多模态的 |
 | `groups.allow` | `[]` | 允许响应的群号列表，**空 = 所有群** |
 | `trigger.debounceMs` | `2000` | 触发后等待合并后续消息的窗口 |
-| `trigger.cooldownMs` | `8000` | 同群两次回复之间的最短间隔 |
+| `reply.delayMinMs` / `delayMaxMs` | `4000` / `8000` | API 返回后、回复前的随机等待，每轮只等一次 |
+| `reply.segmentMinChars` | `12` | 单条最少字数（太短的尾巴会并回上一条） |
+| `reply.segmentTargetChars` | `24` | 单条理想字数，接近时优先换条 |
+| `reply.segmentMaxChars` | `45` | 单条硬上限 |
+| `reply.segmentMaxMessages` | `6` | 一轮最多分几条 |
+| `reply.segmentGapMinMs` / `reply.segmentGapMaxMs` | `1200` / `2800` | 分段之间的随机间隔 |
+| `ambient.enabled` | `false` | 是否开启群聊旁听接话 |
+| `ambient.groups` | `[]` | **指定**允许旁听的群号；开启时必填 |
+| `ambient.keywords` | `[]` | 关键词预筛；空则直接交给模型判定 |
+| `ambient.useLlmJudge` | `true` | 是否用文字模型判断「该不该接」 |
+| `ambient.debounceMs` | `3000` | 群消息静止多久后开始判定 |
+| `ambient.minIntervalMs` | `60000` | 同群两次旁听接话的最小间隔，防止刷屏 |
+| `ambient.maxContextMessages` | `8` | 旁听判定和生成时参考的最近群消息条数 |
+| `ambient.judgeTimeoutMs` | `8000` | 旁听判定请求的超时时间 |
+| `control.enabled` | `true` | 是否启动语音开关控制页 |
+| `control.host` / `port` | `127.0.0.1` / `5100` | 控制页监听地址，**不要暴露到公网** |
 | `history.maxItems` | `24` | 每群保留的历史条数（真正喂给模型的更少） |
-| `vision.enabled` | `true` | 是否识别图片；模型端点必须是多模态的 |
-| `voice.enabled` | `false` | 是否发送语音 |
+| `voice.enabled` | `false` | 语音模式的初始状态，可在控制页随时切换 |
 | `voice.apiEndpoint` | `http://127.0.0.1:9880/tts` | GPT-SoVITS api_v2 地址 |
 | `voice.refAudioPath` | `""` | 参考音频**绝对路径**（开启语音时必填） |
 | `voice.promptText` | `""` | 参考音频里说的那句话，需逐字一致 |
@@ -255,6 +280,83 @@ npm run smoke -- "在干嘛呢"    # 单句自测
 - [ ] `npm test` 通过
 - [ ] `npm run smoke` 连续三轮表现稳定，再放入 QQ 群
 
+## 回复节奏与分段
+
+一轮文字的发送过程：
+
+1. 模型返回后，**只等一次**随机 4–8 秒（`reply.delayMinMs` / `delayMaxMs`）；
+2. 把回复按句号、问号、逗号等切成语义完整的短句；
+3. 依次发送，分段之间随机等 1.2–2.8 秒（`segmentGapMinMs` / `segmentGapMaxMs`）；
+4. 没有回复冷却：上一轮刚结束，下一轮 @ 仍然会正常处理。
+
+切分逻辑移植自 [qikou（气口）](https://github.com/Grabrun/qikou)（MIT）：
+
+- 单条硬上限 `segmentMaxChars`（默认 45 字），理想长度 `segmentTargetChars`（24）；
+- 引号、括号内的标点不切；`Mr.` / `e.g.` 等英文缩写不当句末；
+- 一轮最多 `segmentMaxMessages` 条（默认 6），超了会合并最短的相邻两条；
+- 太短的尾巴会并回上一条，避免出现「嗯。」这种单字气泡。
+
+觉得太碎或太慢，调 `reply` 下的参数即可，不需要改代码。
+
+## 群聊旁听（未被 @ 时接话）
+
+默认关闭。开启后只对 `ambient.groups` 里**指定**的群生效：
+
+```json
+"ambient": {
+  "enabled": true,
+  "groups": [123456789],
+  "keywords": ["助手", "你们怎么看"],
+  "useLlmJudge": true,
+  "debounceMs": 3000,
+  "minIntervalMs": 60000,
+  "maxContextMessages": 8
+}
+```
+
+处理流程：
+
+1. 群里出现非 @ 消息，先记入该群最近消息窗口；
+2. 消息静止 `debounceMs` 后，若有 `keywords`，先做一次关键词预筛；
+3. `useLlmJudge` 为 true 时，用文字模型结合最近 8 条群聊判断「适不适合接」；
+4. 通过后，以该条消息为输入生成回复，并走正常的延迟/分段/语音流程；
+5. 同群两次旁听接话至少间隔 `minIntervalMs`，避免刷屏。
+
+判定失败、模型超时或返回非 YES 都按「不接」处理。旁听只是锦上添花，不会阻塞正常的 @ 回复。
+`ambient.groups` 为空时启动会直接报错，防止误开后在所有群接话。
+如果 `groups.allow` 非空，旁听群也必须同时在 `groups.allow` 里。
+
+## 文字 / 视觉模型分离
+
+两个端点独立配置，各司其职：
+
+```json
+"llm": {
+  "provider": "openai",
+  "model": "gpt-4o-mini"
+},
+"vision": {
+  "enabled": true,
+  "llm": {
+    "provider": "local",
+    "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+    "apiKey": "local",
+    "model": "qwen3-vl-4b"
+  }
+}
+```
+
+| provider | 默认端点 | 默认 key |
+| --- | --- | --- |
+| `local` | `http://127.0.0.1:8080/v1/chat/completions` | `local` |
+| `ollama` | `http://127.0.0.1:11434/v1/chat/completions` | `ollama` |
+| `openai` | `https://api.openai.com/v1/chat/completions` | 环境变量 `OPENAI_API_KEY` |
+| `openai-compatible` | 必须自己填 | `LLM_API_KEY` 或自己填 |
+
+- `vision.llm` 不填则回退到文字 `llm`；填了就**完全独立**，不会字段级混用。
+- 视觉端点必须是多模态模型；纯文本模型请把 `vision.enabled` 设为 `false`。
+- 视觉请求按图片 MD5 缓存，同一张表情包只识别一次。
+
 ## 语音（GPT-SoVITS，可选）
 
 默认关闭。需要时：
@@ -273,8 +375,23 @@ npm run smoke -- "在干嘛呢"    # 单句自测
 }
 ```
 
+### 语音开关
+
+bot 启动后会提供一个本地控制页：<http://127.0.0.1:5100>。
+勾选「发送语音」立即生效，状态写入 `state/voice.json`，重启后保留。
+端口和监听地址由 `control.host` / `control.port` 控制，**默认只绑定 127.0.0.1，不要暴露到公网**。
+
+> SnowLuma 的 WebUI 是封闭的第三方前端，没有插件/扩展接口，无法在不 fork 并重建它的情况下
+> 往里加开关。所以语音开关放在 bot 自己的控制页，不影响 SnowLuma 的登录和 OneBot 配置。
+
+### 语音模式的行为
+
+- **只发语音**：不再发送文字，也不发第一条文字提示；
+- **不加等待**：跳过 4–8 秒和分段间隔，TTS 就绪后直接发；
+- **失败降级**：TTS 合成或发送失败时，自动按文字模式重发（此时恢复随机等待和分段）；
+- 念的内容是整轮台词拼接后的文本，仍会写入对话历史。
+
 `refAudioPath` 必须是**绝对路径**：SnowLuma 的工作目录和 bot 不同，相对路径它找不到。
-文字回复一定会先发；语音合成或发送失败只记日志，不会影响对话。
 
 > SnowLuma 自带 ffmpeg 原生组件，会把 `voice.js` 产出的 wav 自动转成 QQ 需要的 silk，
 > 因此不需要额外安装 ffmpeg，也不用关心 GPT-SoVITS 输出是 32 kHz 还是 48 kHz。
@@ -306,8 +423,9 @@ npm run smoke    # 端到端对话，需要模型在线
 ## 常见问题
 
 **@ 了但没反应？**
-检查：`groups.allow` 是否包含该群、是否真的 @ 到了 bot、是否在 `cooldownMs` 冷却中、
-日志里是否有 `OneBot 已连接`。SnowLuma 掉线或重启时 bot 会自动重连，日志会有提示。
+检查：`groups.allow` 是否包含该群、是否真的 @ 到了 bot、日志里是否有 `OneBot 已连接`。
+没有冷却机制；如果上一轮还在生成，新消息会排队等回合锁。SnowLuma 掉线或重启时
+bot 会自动重连，日志会有提示。
 
 **回复里还是有括号旁白？**
 runtime 和 `bot.js` 都会剥离括号内容。如果模型仍大量输出旁白，
@@ -316,6 +434,20 @@ runtime 和 `bot.js` 都会剥离括号内容。如果模型仍大量输出旁�
 **模型总猜用户的名字 / 乱编称呼？**
 在 `systemPrompt` 的「绝对禁止」里加一条具体反例，并保留「不知道就说没记住」的引导。
 runtime 也会从对话里提取并记忆用户自述的事实，多聊几轮会更稳。
+
+**为什么 bot 接话太频繁 / 不接话？**
+旁听只在 `ambient.groups` 指定的群里生效。太频繁就调大 `ambient.minIntervalMs`、收紧
+`ambient.keywords`，或关掉 `ambient.enabled`；不接话先看日志里有没有「旁听判定」，
+再确认文字模型能正常响应判定请求。
+
+**回复为什么像小作文？**
+检查 `reply.segmentMaxChars`（默认 45）和 `segmentMaxMessages`（默认 6）。
+如果模型一次就输出了一大段且没有标点，只会按长度硬切，读起来仍会偏机械，
+可以在 persona 的例句里示范短句。
+
+**语音模式下为什么没有文字？**
+这是预期行为：语音模式只发语音、不加等待。TTS 失败时才会自动降级为文字。
+想改回文字，打开 <http://127.0.0.1:5100> 取消勾选即可。
 
 **换角色要改代码吗？**
 不用。改 `src/persona.js`，必要时换 `config.voice` 的参考音频即可。
@@ -327,6 +459,13 @@ runtime 也会从对话里提取并记忆用户自述的事实，多聊几轮会
 ## 致谢与许可
 
 - 对话纪律层 `vendor/presence-turn-runtime/` 来自 presence-turn-runtime，MIT License，原样内置。
+- 分段逻辑移植自 [qikou（气口）](https://github.com/Grabrun/qikou)，MIT License，
+  Copyright (c) 2026 Grabrun；本仓库做了面向 QQ 纯台词的精简。完整许可见
+  [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+- 设计调研参考了 [Qbot](https://github.com/TIGillusion/Qbot) 的分段后随机间隔、
+  [astrbot_plugin_proactive_chat](https://github.com/DBJD-CR/astrbot_plugin_proactive_chat)
+  的主动对话/分段配置思路、[dsh-napcat](https://github.com/wzwei1990/dsh-napcat) 的按长度分段。
+  这些项目许可各不相同（GPL/AGPL/MIT），本仓库只借鉴思路，未复制其代码。
 - 模板代码可自由用于个人项目；使用 GPT-SoVITS 时请遵守其许可与使用条款。
 - [SnowLuma](https://github.com/SnowLuma/SnowLuma) 是独立的第三方项目，采用源码可见的非商业许可，
   **本仓库不包含其源码或二进制**。请从官方 Releases 获取，并遵守其 LICENSE / EULA；

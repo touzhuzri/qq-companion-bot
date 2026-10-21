@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "QQ 群 @ 触发的陪伴型 bot 模板:presence-turn 纪律层 + OpenAI 兼容模型 + 可选 GPT-SoVITS 语音",
+  "description": "QQ 群陪伴型 bot 模板:@/旁听触发 + presence-turn 纪律层 + 文字/视觉多端点 + 可选 GPT-SoVITS 语音",
   "engines": {
     "node": ">=22"
   },

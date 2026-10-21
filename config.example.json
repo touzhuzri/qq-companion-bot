@@ -6,22 +6,53 @@
     "staleTimeoutMs": 120000
   },
   "llm": {
+    "provider": "local",
     "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
     "apiKey": "local",
     "model": "qwen3-vl-4b"
+  },
+  "vision": {
+    "enabled": true,
+    "llm": {
+      "provider": "local",
+      "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+      "apiKey": "local",
+      "model": "qwen3-vl-4b"
+    }
   },
   "groups": {
     "allow": []
   },
   "trigger": {
-    "debounceMs": 2000,
-    "cooldownMs": 8000
+    "debounceMs": 2000
+  },
+  "reply": {
+    "delayMinMs": 4000,
+    "delayMaxMs": 8000,
+    "segmentMinChars": 12,
+    "segmentTargetChars": 24,
+    "segmentMaxChars": 45,
+    "segmentMaxMessages": 6,
+    "segmentGapMinMs": 1200,
+    "segmentGapMaxMs": 2800
+  },
+  "ambient": {
+    "enabled": false,
+    "groups": [],
+    "keywords": [],
+    "useLlmJudge": true,
+    "debounceMs": 3000,
+    "minIntervalMs": 60000,
+    "maxContextMessages": 8,
+    "judgeTimeoutMs": 8000
+  },
+  "control": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 5100
   },
   "history": {
     "maxItems": 24
-  },
-  "vision": {
-    "enabled": true
   },
   "voice": {
     "enabled": false,

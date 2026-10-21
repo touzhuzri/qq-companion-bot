@@ -8,9 +8,11 @@ import { TTSService } from './voice.js'
 import { OneBotClient } from './onebot.js'
 import { parseGroupMessage } from './messageParser.js'
 import { PERSONA } from './persona.js'
+import { judgeJoin, keywordHit } from './ambient.js'
+import { VoiceControl } from './control.js'
+import { deliverReply } from './reply.js'
+import { assertLlmUsable } from './llm.js'
 import { sendTurn } from '../vendor/presence-turn-runtime/src/index.js'
-
-const REPLY_GAP_MS = 800
 
 /**
  * 只留纯台词:优先 runtime 已剥过句首旁白的 spokenText,
@@ -34,14 +36,26 @@ async function main() {
   const config = loadConfig(process.env.BOT_CONFIG || './config.json')
   const stateDir = resolve(config.stateDir)
 
+  assertLlmUsable(config.llm, 'llm')
+  if (config.vision.enabled) assertLlmUsable(config.vision.llm, 'vision.llm')
+
   installStorageShim(stateDir)
   const contextStore = new ContextStore(stateDir, config.history.maxItems)
-  const vision = new VisionService({ stateDir, ...config.vision, llm: config.llm })
+  const vision = new VisionService({ stateDir, ...config.vision, llm: config.vision.llm })
   const tts = new TTSService({
     ...config.voice,
     // 必须绝对路径:SnowLuma 进程的工作目录和 bot 不同,相对路径它打不开
     tempDir: resolve(config.voice.tempDir),
   })
+  const voiceControl = new VoiceControl({
+    stateDir,
+    ...config.control,
+    initialEnabled: config.voice.enabled,
+    onChange: (enabled) => logger.info(`语音模式已${enabled ? '开启' : '关闭'}`),
+  })
+  if (config.control.enabled) voiceControl.start()
+
+  const ambientGroups = new Set((config.ambient.groups || []).map(String))
 
   // 全局回合锁:sendTurn 内部有多个 await,串行化避免跨群串状态
   let tail = Promise.resolve()
@@ -56,8 +70,12 @@ async function main() {
 
   /** @type {Map<string, object>} key: groupId:userId */
   const pendingTurns = new Map()
-  /** @type {Map<string, number>} key: groupId */
-  const lastReplyAt = new Map()
+  /** @type {Map<string, object[]>} 每群最近的群聊消息(旁听判定用) */
+  const recentByGroup = new Map()
+  /** @type {Map<string, NodeJS.Timeout>} key: groupId */
+  const ambientTimers = new Map()
+  /** @type {Map<string, number>} key: groupId,上次旁听接话时间 */
+  const lastAmbientAt = new Map()
 
   const client = new OneBotClient(config.onebot, handleGroupMessage)
 
@@ -65,9 +83,17 @@ async function main() {
     if (String(event.user_id) === String(config.botQQ)) return
 
     const parsed = parseGroupMessage(event, config.botQQ)
-    if (!parsed.triggered) return
     const allowList = config.groups.allow.map(String)
     if (allowList.length && !allowList.includes(parsed.groupId)) return
+
+    recordRecent(parsed)
+
+    if (!parsed.triggered) {
+      scheduleAmbient(parsed)
+      return
+    }
+
+    cancelAmbient(parsed.groupId)
 
     const key = `${parsed.groupId}:${parsed.senderId}`
     const existing = pendingTurns.get(key)
@@ -89,6 +115,91 @@ async function main() {
     resetTimer(key, turn)
   }
 
+  function recordRecent(parsed) {
+    if (!parsed.text && !parsed.images.length) return
+    const list = recentByGroup.get(parsed.groupId) || []
+    const next = [
+      ...list,
+      {
+        userId: parsed.senderId,
+        nickname: parsed.nickname,
+        text: parsed.text,
+        images: parsed.images,
+        at: Date.now(),
+      },
+    ]
+    const cap = Math.max(8, config.ambient.maxContextMessages + 2)
+    recentByGroup.set(parsed.groupId, next.slice(-cap))
+  }
+
+  function scheduleAmbient(parsed) {
+    if (!config.ambient.enabled) return
+    if (!ambientGroups.has(parsed.groupId)) return
+    if (!parsed.text && !parsed.images.length) return
+
+    const existing = ambientTimers.get(parsed.groupId)
+    if (existing) clearTimeout(existing)
+
+    const timer = setTimeout(() => {
+      ambientTimers.delete(parsed.groupId)
+      maybeAmbient(parsed.groupId).catch((err) =>
+        logger.warn(`旁听处理失败: ${err?.message}`),
+      )
+    }, config.ambient.debounceMs)
+    ambientTimers.set(parsed.groupId, timer)
+  }
+
+  function cancelAmbient(groupId) {
+    const timer = ambientTimers.get(groupId)
+    if (!timer) return
+    clearTimeout(timer)
+    ambientTimers.delete(groupId)
+  }
+
+  function hasPendingTurn(groupId) {
+    for (const key of pendingTurns.keys()) {
+      if (key.startsWith(`${groupId}:`)) return true
+    }
+    return false
+  }
+
+  async function maybeAmbient(groupId) {
+    const recent = recentByGroup.get(groupId) || []
+    const last = recent[recent.length - 1]
+    if (!last) return
+
+    if (Date.now() - (lastAmbientAt.get(groupId) || 0) < config.ambient.minIntervalMs) return
+    if (hasPendingTurn(groupId)) return
+
+    if (config.ambient.keywords.length && !keywordHit(last.text, config.ambient.keywords)) {
+      return
+    }
+
+    if (config.ambient.useLlmJudge) {
+      const accepted = await judgeJoin({
+        recent,
+        persona: PERSONA,
+        llm: config.llm,
+        timeoutMs: config.ambient.judgeTimeoutMs,
+      })
+      if (!accepted) {
+        logger.info(`群 ${groupId} 旁听判定:不接话`)
+        return
+      }
+    }
+
+    lastAmbientAt.set(groupId, Date.now())
+    logger.info(`群 ${groupId} 旁听判定:接话`)
+    const turn = {
+      groupId,
+      userId: last.userId,
+      nickname: last.nickname,
+      texts: last.text ? [last.text] : [],
+      images: last.images || [],
+    }
+    await withTurnLock(() => runTurn(turn, { ambient: true }))
+  }
+
   function collectInto(turn, parsed) {
     if (parsed.text) turn.texts.push(parsed.text)
     turn.images.push(...parsed.images)
@@ -105,26 +216,23 @@ async function main() {
     }, config.trigger.debounceMs)
   }
 
-  async function runTurn(turn) {
-    const last = lastReplyAt.get(turn.groupId) ?? 0
-    if (Date.now() - last < config.trigger.cooldownMs) {
-      logger.info(`群 ${turn.groupId} 冷却中,跳过本轮`)
-      return
-    }
-
+  async function runTurn(turn, { ambient = false } = {}) {
     const userMessage = await composeUserMessage(turn)
     if (!userMessage.trim()) return
 
     setStorageNamespace(turn.groupId)
     logger.info(
-      `群 ${turn.groupId} | ${turn.nickname || turn.userId}: ${userMessage.replace(/\n/g, ' ⏎ ')}`,
+      `群 ${turn.groupId} | ${ambient ? '[旁听] ' : ''}${turn.nickname || turn.userId}: ` +
+        userMessage.replace(/\n/g, ' ⏎ '),
     )
 
     let result
     try {
       result = await sendTurn({
         userMessage,
-        history: contextStore.getHistory(turn.groupId),
+        history: ambient
+          ? ambientHistory(turn.groupId)
+          : contextStore.getHistory(turn.groupId),
         pack: PERSONA,
         llm: config.llm,
       })
@@ -141,36 +249,40 @@ async function main() {
       return
     }
 
-    for (const line of lines) {
-      try {
-        await client.sendGroupText(turn.groupId, line)
-      } catch (err) {
-        logger.error(`发送失败: ${err?.message}`)
-        break
-      }
-      contextStore.append(turn.groupId, 'assistant', line)
-      await sleep(REPLY_GAP_MS)
+    const delivery = await deliverReply({
+      lines,
+      groupId: turn.groupId,
+      config,
+      client,
+      tts,
+      voiceEnabled: voiceControl.enabled,
+      contextStore,
+    })
+    if (delivery.mode === 'none') {
+      logger.info('分段后无有效台词,保持沉默')
+      return
     }
 
-    // 语音跟在文字后面;失败静默降级为纯文字
-    if (config.voice.enabled) {
-      try {
-        const wavPath = await tts.synthesize(lines.join(''))
-        await client.sendGroupMessage(turn.groupId, [
-          { type: 'record', data: { file: `file://${wavPath}` } },
-        ])
-        tts.cleanupLater(wavPath)
-      } catch (err) {
-        logger.warn(`语音发送失败(文字已发出): ${err?.message}`)
-      }
-    }
+    logDone(result)
+  }
 
-    lastReplyAt.set(turn.groupId, Date.now())
+  function logDone(result) {
     logger.info(
       `回复完成 | kind=${result.policy.turnKind} salvage=${
         result.salvage.used ? (result.salvage.adopted ? 'used' : 'rejected') : 'none'
       } affect=${JSON.stringify(result.presence.affect ?? {})}`,
     )
+  }
+
+  /** 旁听轮次用最近群聊当上下文,最后一条就是当前 userMessage */
+  function ambientHistory(groupId) {
+    const list = (recentByGroup.get(groupId) || [])
+      .slice(0, -1)
+      .slice(-config.ambient.maxContextMessages)
+    return list.map((item) => ({
+      role: 'user',
+      content: `${item.nickname || item.userId || '群友'}: ${item.text || '[图片]'}`,
+    }))
   }
 
   /** 文字 + 图片描述合成一条 user 消息;识图失败降级为通用描述。 */
@@ -200,12 +312,9 @@ async function main() {
   function shutdown() {
     logger.info('退出中…')
     client.close()
+    voiceControl.stop()
     flushNow()
     process.exit(0)
   }
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown)
-
-  function sleep(ms) {
-    return new Promise((resolveSleep) => setTimeout(resolveSleep, ms))
-  }
 }
