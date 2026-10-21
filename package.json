@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node src/bot.js",
     "test": "node --test test/*.test.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "sync": "node scripts/sync-snowluma.mjs"
   }
 }

@@ -54,7 +54,8 @@ QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
 ├── vendor/presence-turn-runtime/   对话纪律层（MIT，上游源码原样内置）
 ├── scripts/
 │   ├── smoke.mjs         不接 QQ，直接跑一轮完整对话，用来调人设
-│   └── start-llama.sh    启动本地 llama-server（文本 + 视觉）
+│   ├── start-llama.sh    启动本地 llama-server（视觉）
+│   └── sync-snowluma.mjs 从 SnowLuma 同步 UIN / WS 地址 / access token
 ├── test/                 单元测试（不需要模型）
 ├── config.example.json   配置模板
 ├── start.sh              一键启动：Qwen 视觉 → GPT-SoVITS → bot → SnowLuma
@@ -162,7 +163,24 @@ SnowLuma 需要单独安装，本项目只通过 OneBot 11 与它通信。
    [「用私聊测试」](#用私聊测试没有群也能测) 配置私聊白名单。
 
 > 首次启动会打印类似 `user=admin password=...` 的临时凭据，改密后不会再次显示。
-> OneBot WS 端口 `3001` 只有在 QQ 账号接入后才会开始监听，bot 会自动重连。
+> OneBot WS 端口 `3001` 只有在 QQ 账号接入后才会开始监听。
+
+### SnowLuma 配置同步
+
+SnowLuma 会在 `config/onebot_<UIN>.json` 里生成随机 access token。`start.sh` 启动前会自动运行：
+
+```bash
+node scripts/sync-snowluma.mjs
+```
+
+把 SnowLuma 的登录 UIN、WS 地址和 token 同步到 `config.json`：
+
+- `botQQ` ← SnowLuma 登录的 QQ 号
+- `onebot.wsUrl` ← SnowLuma 的 WebSocket 服务端地址
+- `onebot.accessToken` ← 对应 token
+
+所以首次在 WebUI 里接入 QQ 并启用 OneBot 后，**再运行一次 `./start.sh`** 即可。
+之后 token 若变化，重新运行 `./start.sh` 或手动执行上面的同步命令即可。
 
 > 端口和 token 都以后台 WebUI 实际配置为准。OneBot 消息段、`send_group_msg` 等动作与 NapCat 一致，
 > bot 端不需要额外适配。

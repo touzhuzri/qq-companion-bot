@@ -104,6 +104,11 @@ echo " 网关: SnowLuma       :5099"
 echo "=========================================="
 
 # ---------- 0. 配置预检 ----------
+# SnowLuma 的 OneBot 配置里有随机 access token,启动前自动同步到 config.json
+if [ -f "$ROOT/scripts/sync-snowluma.mjs" ]; then
+  node "$ROOT/scripts/sync-snowluma.mjs" || true
+fi
+
 if [ ! -f "$ROOT/config.json" ]; then
   echo "!! 缺少 $ROOT/config.json。先复制 config.example.json 并填写。" >&2
   exit 1
