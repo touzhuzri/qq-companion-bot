@@ -6,11 +6,11 @@ function makeClient() {
   const calls = []
   return {
     calls,
-    async sendGroupText(groupId, text) {
-      calls.push({ kind: 'text', groupId, text })
+    async sendText(target, text) {
+      calls.push({ kind: 'text', target, text })
     },
-    async sendGroupMessage(groupId, segments) {
-      calls.push({ kind: 'message', groupId, segments })
+    async sendMessage(target, segments) {
+      calls.push({ kind: 'message', target, segments })
     },
   }
 }
@@ -19,8 +19,8 @@ function makeStore() {
   const items = []
   return {
     items,
-    append(groupId, role, content) {
-      items.push({ groupId, role, content })
+    append(contextKey, role, content) {
+      items.push({ contextKey, role, content })
     },
   }
 }
@@ -38,6 +38,8 @@ const replyConfig = {
   },
 }
 
+const groupTarget = { isPrivate: false, targetId: 'g1' }
+
 test('buildSegments splits long lines', () => {
   const segments = buildSegments(
     ['今天下班路上看到一家新开的店，排队的人特别多，我就没进去。'],
@@ -52,7 +54,8 @@ test('text mode waits once and sends every segment', async () => {
   const store = makeStore()
   const result = await deliverReply({
     lines: ['今天下班路上看到一家新开的店，排队的人特别多，我就没进去。'],
-    groupId: 'g1',
+    target: groupTarget,
+    contextKey: 'g1',
     config: replyConfig,
     client,
     tts: {},
@@ -63,11 +66,36 @@ test('text mode waits once and sends every segment', async () => {
   assert.equal(result.mode, 'text')
   assert.ok(client.calls.length > 1)
   assert.ok(client.calls.every((call) => call.kind === 'text'))
+  assert.ok(client.calls.every((call) => call.target === groupTarget))
   assert.equal(
     client.calls.map((call) => call.text).join(''),
     '今天下班路上看到一家新开的店，排队的人特别多，我就没进去。',
   )
   assert.equal(store.items.length, client.calls.length)
+  assert.ok(store.items.every((item) => item.contextKey === 'g1'))
+})
+
+test('private targets are passed through unchanged', async () => {
+  const client = makeClient()
+  const store = makeStore()
+  const privateTarget = { isPrivate: true, targetId: '12345' }
+  const result = await deliverReply({
+    lines: ['在呢。'],
+    target: privateTarget,
+    contextKey: 'private_12345',
+    config: replyConfig,
+    client,
+    tts: {},
+    voiceEnabled: false,
+    contextStore: store,
+  })
+
+  assert.equal(result.mode, 'text')
+  assert.equal(client.calls.length, 1)
+  assert.deepEqual(client.calls[0].target, privateTarget)
+  assert.deepEqual(store.items, [
+    { contextKey: 'private_12345', role: 'assistant', content: '在呢。' },
+  ])
 })
 
 test('voice mode sends only a record and does not wait', async () => {
@@ -77,7 +105,8 @@ test('voice mode sends only a record and does not wait', async () => {
   const startedAt = Date.now()
   const result = await deliverReply({
     lines: ['在呢，什么事？'],
-    groupId: 'g1',
+    target: groupTarget,
+    contextKey: 'g1',
     config: {
       reply: { ...replyConfig.reply, delayMinMs: 10000, delayMaxMs: 10000 },
     },
@@ -101,7 +130,7 @@ test('voice mode sends only a record and does not wait', async () => {
   assert.ok(Date.now() - startedAt < 2000, 'voice mode must not wait for text delay')
   assert.equal(cleaned, true)
   assert.deepEqual(store.items, [
-    { groupId: 'g1', role: 'assistant', content: '在呢，什么事？' },
+    { contextKey: 'g1', role: 'assistant', content: '在呢，什么事？' },
   ])
 })
 
@@ -110,7 +139,8 @@ test('voice failure falls back to text', async () => {
   const store = makeStore()
   const result = await deliverReply({
     lines: ['在呢，什么事？'],
-    groupId: 'g1',
+    target: groupTarget,
+    contextKey: 'g1',
     config: replyConfig,
     client,
     tts: {
@@ -131,7 +161,8 @@ test('returns none when there is nothing to say', async () => {
   const client = makeClient()
   const result = await deliverReply({
     lines: [],
-    groupId: 'g1',
+    target: groupTarget,
+    contextKey: 'g1',
     config: replyConfig,
     client,
     tts: {},

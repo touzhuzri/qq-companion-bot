@@ -19,7 +19,7 @@ QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
 ## 特性
 
 - **零 npm 依赖**：Node ≥ 22 自带 WebSocket / fetch，clone 下来直接跑。
-- **@ 回复 + 群聊旁听**：默认只回 @；可在指定群开启旁听，关键词预筛 + 文字模型判定后自然接话。
+- **@ 回复 + 群聊旁听 + 私聊**：群聊默认只回 @；可在指定群开启旁听；私聊需显式 allowlist。
 - **没有回复冷却**：连续消息（默认 2 秒内、同一人）仍会合并，但不会因为「刚回过」而丢弃新一轮。
 - **像真人一样分条**：API 返回后随机等 4–8 秒再开口，长句按标点/长度切成多条，段间 1.2–2.8 秒。
 - **按群隔离**：上下文、情绪叠态、记忆、表情包缓存都按群号分开落盘，互不串台。
@@ -158,7 +158,8 @@ SnowLuma 需要单独安装，本项目只通过 OneBot 11 与它通信。
    这样和 `config.json` 的 `onebot.accessToken: ""` 一致。
    如果保留 token，就把它复制到 `onebot.accessToken`，然后重启 bot。
 5. 把 bot 拉进群，设为普通成员即可；默认**只有 @ 它才会回话**，
-   未 @ 旁听需要另外开启 `ambient`（见下文）。
+   未 @ 旁听需要另外开启 `ambient`（见下文）。没有群也可以按
+   [「用私聊测试」](#用私聊测试没有群也能测) 配置私聊白名单。
 
 > 首次启动会打印类似 `user=admin password=...` 的临时凭据，改密后不会再次显示。
 > OneBot WS 端口 `3001` 只有在 QQ 账号接入后才会开始监听，bot 会自动重连。
@@ -223,6 +224,8 @@ SNOWLUMA_DIR=/path/to/SnowLuma \
 | `vision.llm` | `null` | 独立的视觉端点对象；文字用 Anthropic 协议时**必须**单独配置 |
 | `vision.enabled` | `true` | 是否用 Qwen 等视觉模型读表情包 |
 | `groups.allow` | `[]` | 允许响应的群号列表，**空 = 所有群** |
+| `privateChat.enabled` | `false` | 是否响应私聊 |
+| `privateChat.allow` | `[]` | 允许私聊的 QQ 号；开启时必填，空列表会启动报错 |
 | `trigger.debounceMs` | `2000` | 触发后等待合并后续消息的窗口 |
 | `reply.delayMinMs` / `delayMaxMs` | `4000` / `8000` | API 返回后、回复前的随机等待，每轮只等一次 |
 | `reply.segmentMinChars` | `12` | 单条最少字数（太短的尾巴会并回上一条） |
@@ -388,6 +391,29 @@ npm run smoke -- "在干嘛呢"    # 单句自测
 判定失败、模型超时或返回非 YES 都按「不接」处理。旁听只是锦上添花，不会阻塞正常的 @ 回复。
 `ambient.groups` 为空时启动会直接报错，防止误开后在所有群接话。
 如果 `groups.allow` 非空，旁听群也必须同时在 `groups.allow` 里。
+
+## 用私聊测试（没有群也能测）
+
+1. 在 `config.json` 里开启私聊，并填上测试账号的 QQ 号：
+
+```json
+"privateChat": {
+  "enabled": true,
+  "allow": [你的测试QQ号]
+}
+```
+
+2. 重启 bot（或重新运行 `./start.sh`）。
+3. 用测试账号给 bot 发私聊，**不需要 @**。
+4. 日志会出现 `私聊 <QQ号> | ...`；历史、情绪叠态按私聊会话单独落盘：
+   `state/history_private_<QQ号>.json`、`state/private_<QQ号>.json`。
+
+要点：
+
+- `privateChat.enabled` 为 true 时 `allow` 不能为空，启动会直接报错，避免对陌生人回复。
+- 私聊也走相同的随机延迟、分段和语音开关；语音通过 `send_private_msg` 发送。
+- 前提仍然是 SnowLuma 已注入 QQ、OneBot WS 已连上，否则 bot 收不到事件。
+- 群聊和私聊可以同时开着；群聊历史不受影响。
 
 ## 文字 / 视觉模型分离
 

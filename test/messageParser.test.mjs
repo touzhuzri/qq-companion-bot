@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { parseGroupMessage } from '../src/messageParser.js'
+import { parseGroupMessage, parseMessage } from '../src/messageParser.js'
 
 const at = (qq) => ({ type: 'at', data: { qq } })
 const text = (t) => ({ type: 'text', data: { text: t } })
@@ -43,4 +43,38 @@ test('@bot with only an image still triggers with no text', () => {
   assert.equal(parsed.triggered, true)
   assert.equal(parsed.text, '')
   assert.equal(parsed.images.length, 1)
+})
+
+test('private messages trigger without an @ mention', () => {
+  const parsed = parseMessage(
+    {
+      message_type: 'private',
+      user_id: 456,
+      sender: { nickname: '小明' },
+      message: [text('在吗'), image('https://example.com/a.png')],
+    },
+    10000,
+  )
+  assert.equal(parsed.isPrivate, true)
+  assert.equal(parsed.messageType, 'private')
+  assert.equal(parsed.triggered, true)
+  assert.equal(parsed.targetId, '456')
+  assert.equal(parsed.groupId, '')
+  assert.equal(parsed.text, '在吗')
+  assert.equal(parsed.images.length, 1)
+})
+
+test('group messages carry an explicit target and are not private', () => {
+  const parsed = parseMessage(
+    {
+      message_type: 'group',
+      group_id: 123,
+      user_id: 456,
+      message: [at('10000'), text('在吗')],
+    },
+    10000,
+  )
+  assert.equal(parsed.isPrivate, false)
+  assert.equal(parsed.targetId, '123')
+  assert.equal(parsed.groupId, '123')
 })

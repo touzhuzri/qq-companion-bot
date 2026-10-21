@@ -6,7 +6,7 @@ import { ContextStore } from './contextStore.js'
 import { VisionService } from './vision.js'
 import { TTSService } from './voice.js'
 import { OneBotClient } from './onebot.js'
-import { parseGroupMessage } from './messageParser.js'
+import { parseMessage } from './messageParser.js'
 import { PERSONA } from './persona.js'
 import { judgeJoin, keywordHit } from './ambient.js'
 import { VoiceControl } from './control.js'
@@ -70,7 +70,7 @@ async function main() {
     return run
   }
 
-  /** @type {Map<string, object>} key: groupId:userId */
+  /** @type {Map<string, object>} key: sessionKey:userId */
   const pendingTurns = new Map()
   /** @type {Map<string, object[]>} 每群最近的群聊消息(旁听判定用) */
   const recentByGroup = new Map()
@@ -79,25 +79,37 @@ async function main() {
   /** @type {Map<string, number>} key: groupId,上次旁听接话时间 */
   const lastAmbientAt = new Map()
 
-  const client = new OneBotClient(config.onebot, handleGroupMessage)
+  const client = new OneBotClient(config.onebot, handleMessage)
 
-  function handleGroupMessage(event) {
+  function handleMessage(event) {
     if (String(event.user_id) === String(config.botQQ)) return
 
-    const parsed = parseGroupMessage(event, config.botQQ)
-    const allowList = config.groups.allow.map(String)
-    if (allowList.length && !allowList.includes(parsed.groupId)) return
+    const parsed = parseMessage(event, config.botQQ)
 
-    recordRecent(parsed)
+    if (parsed.isPrivate) {
+      if (!config.privateChat.enabled) return
+      const allow = config.privateChat.allow.map(String)
+      if (!allow.includes(parsed.senderId)) return
+    } else {
+      const allowList = config.groups.allow.map(String)
+      if (allowList.length && !allowList.includes(parsed.groupId)) return
 
-    if (!parsed.triggered) {
-      scheduleAmbient(parsed)
-      return
+      recordRecent(parsed)
+
+      if (!parsed.triggered) {
+        scheduleAmbient(parsed)
+        return
+      }
+
+      cancelAmbient(parsed.groupId)
     }
 
-    cancelAmbient(parsed.groupId)
+    const sessionKey = parsed.isPrivate
+      ? `private:${parsed.targetId}`
+      : `group:${parsed.groupId}`
+    const contextKey = parsed.isPrivate ? `private_${parsed.targetId}` : parsed.groupId
+    const key = `${sessionKey}:${parsed.senderId}`
 
-    const key = `${parsed.groupId}:${parsed.senderId}`
     const existing = pendingTurns.get(key)
     if (existing) {
       collectInto(existing, parsed)
@@ -106,6 +118,10 @@ async function main() {
     }
 
     const turn = {
+      isPrivate: parsed.isPrivate,
+      targetId: parsed.targetId,
+      sessionKey,
+      contextKey,
       groupId: parsed.groupId,
       userId: parsed.senderId,
       nickname: parsed.nickname,
@@ -158,9 +174,9 @@ async function main() {
     ambientTimers.delete(groupId)
   }
 
-  function hasPendingTurn(groupId) {
+  function hasPendingTurn(sessionKey) {
     for (const key of pendingTurns.keys()) {
-      if (key.startsWith(`${groupId}:`)) return true
+      if (key.startsWith(`${sessionKey}:`)) return true
     }
     return false
   }
@@ -171,7 +187,7 @@ async function main() {
     if (!last) return
 
     if (Date.now() - (lastAmbientAt.get(groupId) || 0) < config.ambient.minIntervalMs) return
-    if (hasPendingTurn(groupId)) return
+    if (hasPendingTurn(`group:${groupId}`)) return
 
     if (config.ambient.keywords.length && !keywordHit(last.text, config.ambient.keywords)) {
       return
@@ -193,6 +209,10 @@ async function main() {
     lastAmbientAt.set(groupId, Date.now())
     logger.info(`群 ${groupId} 旁听判定:接话`)
     const turn = {
+      isPrivate: false,
+      targetId: groupId,
+      sessionKey: `group:${groupId}`,
+      contextKey: groupId,
       groupId,
       userId: last.userId,
       nickname: last.nickname,
@@ -222,9 +242,10 @@ async function main() {
     const userMessage = await composeUserMessage(turn)
     if (!userMessage.trim()) return
 
-    setStorageNamespace(turn.groupId)
+    setStorageNamespace(turn.sessionKey)
+    const label = turn.isPrivate ? `私聊 ${turn.targetId}` : `群 ${turn.groupId}`
     logger.info(
-      `群 ${turn.groupId} | ${ambient ? '[旁听] ' : ''}${turn.nickname || turn.userId}: ` +
+      `${label} | ${ambient ? '[旁听] ' : ''}${turn.nickname || turn.userId}: ` +
         userMessage.replace(/\n/g, ' ⏎ '),
     )
 
@@ -234,7 +255,7 @@ async function main() {
         userMessage,
         history: ambient
           ? ambientHistory(turn.groupId)
-          : contextStore.getHistory(turn.groupId),
+          : contextStore.getHistory(turn.contextKey),
         pack: PERSONA,
         llm: runtimeLlm,
       })
@@ -244,7 +265,7 @@ async function main() {
       return
     }
 
-    contextStore.append(turn.groupId, 'user', userMessage)
+    contextStore.append(turn.contextKey, 'user', userMessage)
     const lines = result.replies.map(pureSpeech).filter(Boolean)
     if (!lines.length) {
       logger.info('本轮无有效台词(剥空且未抢救成功),保持沉默')
@@ -253,7 +274,8 @@ async function main() {
 
     const delivery = await deliverReply({
       lines,
-      groupId: turn.groupId,
+      target: { isPrivate: turn.isPrivate, targetId: turn.targetId },
+      contextKey: turn.contextKey,
       config,
       client,
       tts,

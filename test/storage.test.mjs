@@ -24,6 +24,20 @@ test('namespaces isolate mood/memory state per group', () => {
   assert.equal(localStorage.getItem('ptr_affect_state_v1'), '{"hurt":1}')
 })
 
+test('private sessions do not share state with a group of the same number', () => {
+  const dir = setup()
+  setStorageNamespace('group:123')
+  localStorage.setItem('ptr_affect_state_v1', '{"hurt":1}')
+
+  setStorageNamespace('private:123')
+  assert.equal(localStorage.getItem('ptr_affect_state_v1'), null)
+  localStorage.setItem('ptr_affect_state_v1', '{"hurt":2}')
+
+  flushNow()
+  assert.ok(existsSync(join(dir, 'group_123.json')))
+  assert.ok(existsSync(join(dir, 'private_123.json')))
+})
+
 test('flush writes per-group files that reload on next install', () => {
   const dir = setup()
   setStorageNamespace(333)

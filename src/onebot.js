@@ -16,7 +16,7 @@ export class OneBotClient {
   #reconnectBaseMs
   #reconnectMaxMs
   #staleTimeoutMs
-  #onGroupMessage
+  #onMessage
   /** @type {WebSocket|null} */
   #ws = null
   #closedByUs = false
@@ -30,7 +30,7 @@ export class OneBotClient {
 
   constructor(
     { wsUrl, accessToken, reconnectBaseMs, reconnectMaxMs, staleTimeoutMs },
-    onGroupMessage,
+    onMessage,
   ) {
     const token = String(accessToken || '')
     this.#url = token
@@ -39,7 +39,7 @@ export class OneBotClient {
     this.#reconnectBaseMs = reconnectBaseMs
     this.#reconnectMaxMs = reconnectMaxMs
     this.#staleTimeoutMs = staleTimeoutMs
-    this.#onGroupMessage = onGroupMessage
+    this.#onMessage = onMessage
   }
 
   connect() {
@@ -123,6 +123,28 @@ export class OneBotClient {
     return this.sendGroupMessage(groupId, [{ type: 'text', data: { text } }])
   }
 
+  sendPrivateMessage(userId, segments) {
+    return this.call('send_private_msg', {
+      user_id: Number(userId),
+      message: segments,
+    })
+  }
+
+  async sendPrivateText(userId, text) {
+    return this.sendPrivateMessage(userId, [{ type: 'text', data: { text } }])
+  }
+
+  /** 统一目标发送:target = { isPrivate, targetId } */
+  sendMessage(target, segments) {
+    return target?.isPrivate
+      ? this.sendPrivateMessage(target.targetId, segments)
+      : this.sendGroupMessage(target?.targetId, segments)
+  }
+
+  sendText(target, text) {
+    return this.sendMessage(target, [{ type: 'text', data: { text } }])
+  }
+
   #scheduleReconnect() {
     const attempt = this.#attempts++
     const delay = Math.min(this.#reconnectMaxMs, this.#reconnectBaseMs * 2 ** attempt)
@@ -201,11 +223,14 @@ export class OneBotClient {
       }
       return
     }
-    if (frame.post_type === 'message' && frame.message_type === 'group') {
+    if (
+      frame.post_type === 'message' &&
+      (frame.message_type === 'group' || frame.message_type === 'private')
+    ) {
       try {
-        this.#onGroupMessage(frame)
+        this.#onMessage(frame)
       } catch (err) {
-        logger.error(`处理群消息出错: ${err?.stack ?? err?.message}`)
+        logger.error(`处理消息出错: ${err?.stack ?? err?.message}`)
       }
     }
   }

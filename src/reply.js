@@ -32,7 +32,8 @@ export function buildSegments(lines, replyConfig = {}) {
  */
 export async function deliverReply({
   lines,
-  groupId,
+  target,
+  contextKey,
   config,
   client,
   tts,
@@ -46,11 +47,11 @@ export async function deliverReply({
     try {
       const spoken = replies.join(' ')
       const wavPath = await tts.synthesize(spoken)
-      await client.sendGroupMessage(groupId, [
+      await client.sendMessage(target, [
         { type: 'record', data: { file: `file://${wavPath}` } },
       ])
       tts.cleanupLater(wavPath)
-      contextStore.append(groupId, 'assistant', spoken)
+      contextStore.append(contextKey, 'assistant', spoken)
       return { mode: 'voice', segments: [spoken] }
     } catch (err) {
       logger.warn(`语音发送失败,降级为文字: ${err?.message}`)
@@ -71,12 +72,12 @@ export async function deliverReply({
     }
     const segment = segments[index]
     try {
-      await client.sendGroupText(groupId, segment)
+      await client.sendText(target, segment)
     } catch (err) {
       logger.error(`发送失败: ${err?.message}`)
       break
     }
-    contextStore.append(groupId, 'assistant', segment)
+    contextStore.append(contextKey, 'assistant', segment)
     sent.push(segment)
   }
 

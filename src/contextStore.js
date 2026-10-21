@@ -43,6 +43,9 @@ export class ContextStore {
   }
 }
 
-function sanitize(groupId) {
-  return String(groupId).replace(/[^0-9-]/g, '')
+function sanitize(key) {
+  const raw = String(key)
+  const scoped = /^(group|private)[:_](.*)$/.exec(raw)
+  if (scoped) return `${scoped[1]}_${scoped[2].replace(/[^0-9-]/g, '')}`
+  return raw.replace(/[^0-9-]/g, '')
 }

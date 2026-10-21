@@ -37,9 +37,9 @@ export function installStorageShim(dir) {
   }
 }
 
-/** 每轮 sendTurn 前切换到对应群的命名空间,防止跨群串情绪/记忆。 */
-export function setStorageNamespace(groupId) {
-  activeNs = namespaceKey(groupId)
+/** 每轮 sendTurn 前切换到对应会话的命名空间,防止跨会话串情绪/记忆。 */
+export function setStorageNamespace(sessionKey) {
+  activeNs = namespaceKey(sessionKey)
 }
 
 export function flushNow() {
@@ -56,8 +56,12 @@ function currentNs() {
   return activeNs || '_default_'
 }
 
-function namespaceKey(groupId) {
-  return `group_${String(groupId).replace(/[^0-9-]/g, '')}`
+function namespaceKey(sessionKey) {
+  const raw = String(sessionKey)
+  const scoped = /^(group|private):(.*)$/.exec(raw)
+  if (scoped) return `${scoped[1]}_${scoped[2].replace(/[^0-9-]/g, '')}`
+  // 兼容旧调用:直接传群号
+  return `group_${raw.replace(/[^0-9-]/g, '')}`
 }
 
 function loadNamespace(ns) {

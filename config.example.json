@@ -29,6 +29,10 @@
   "groups": {
     "allow": []
   },
+  "privateChat": {
+    "enabled": false,
+    "allow": []
+  },
   "trigger": {
     "debounceMs": 2000
   },

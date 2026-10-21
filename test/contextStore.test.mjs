@@ -36,6 +36,22 @@ test('persists across instances and isolates groups', () => {
   }
 })
 
+test('keeps private and group histories separate', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ctx-'))
+  try {
+    const store = new ContextStore(dir)
+    store.append('123', 'user', '群消息')
+    store.append('private_123', 'user', '私聊消息')
+
+    assert.deepEqual(store.getHistory('123'), [{ role: 'user', content: '群消息' }])
+    assert.deepEqual(store.getHistory('private_123'), [
+      { role: 'user', content: '私聊消息' },
+    ])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('skips empty content appends', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ctx-'))
   try {

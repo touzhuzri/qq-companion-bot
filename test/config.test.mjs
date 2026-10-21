@@ -106,6 +106,23 @@ test('keeps vision llm independent from the text llm', () => {
   )
 })
 
+test('private chat requires an explicit allow list when enabled', () => {
+  withConfig({ ...base, privateChat: { enabled: true, allow: [] } }, (path) => {
+    assert.throws(() => loadConfig(path), /privateChat\.allow/)
+  })
+})
+
+test('private chat accepts allow-listed users', () => {
+  withConfig(
+    { ...base, privateChat: { enabled: true, allow: ['12345'] } },
+    (path) => {
+      const config = loadConfig(path)
+      assert.equal(config.privateChat.enabled, true)
+      assert.deepEqual(config.privateChat.allow, ['12345'])
+    },
+  )
+})
+
 test('rejects ambient mode without an explicit group list', () => {
   withConfig({ ...base, ambient: { enabled: true, groups: [] } }, (path) => {
     assert.throws(() => loadConfig(path), /ambient\.groups/)

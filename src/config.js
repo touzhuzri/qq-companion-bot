@@ -32,6 +32,11 @@ export const DEFAULTS = {
     /** 空 = 所有群都响应 */
     allow: [],
   },
+  privateChat: {
+    /** 私聊默认关闭;开启时必须填写 allow,避免对陌生人回复 */
+    enabled: false,
+    allow: [],
+  },
   trigger: {
     /** 合并同一人连续消息的窗口,不是回复冷却 */
     debounceMs: 2000,
@@ -131,6 +136,12 @@ export function loadConfig(configPath = './config.json') {
       )
     }
     assertLlmUsable(merged.vision.llm, 'vision.llm')
+  }
+
+  if (merged.privateChat?.enabled && !(merged.privateChat.allow || []).length) {
+    throw new Error(
+      'privateChat.enabled 为 true 但 privateChat.allow 为空。请填写允许私聊的 QQ 号。',
+    )
   }
 
   if (merged.ambient?.enabled && !(merged.ambient.groups || []).length) {
