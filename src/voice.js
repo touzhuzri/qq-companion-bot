@@ -51,7 +51,7 @@ export class TTSService {
     const buffer = Buffer.from(await response.arrayBuffer())
     if (buffer.byteLength < 1000) throw new Error('TTS 返回内容过短')
 
-    // 直接透传模型原始输出(v2=32kHz,NapCat 转码器对 32k 通过、对 24k/48k 会失败)
+    // 直接透传模型原始输出;SnowLuma 会用内置 ffmpeg 转成 silk,这里不重采样
     const path = join(this.#tempDir, `tts_${randomUUID()}.wav`)
     await new Promise((resolveWrite, rejectWrite) =>
       writeFile(path, buffer, (err) => (err ? rejectWrite(err) : resolveWrite())),
@@ -59,7 +59,7 @@ export class TTSService {
     return path
   }
 
-  /** NapCat 异步读文件,延迟删除避免发送中途文件消失 */
+  /** 网关异步读文件,延迟删除避免发送中途文件消失 */
   cleanupLater(path) {
     setTimeout(() => {
       unlink(path, () => {})

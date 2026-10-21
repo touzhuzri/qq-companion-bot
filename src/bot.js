@@ -39,7 +39,7 @@ async function main() {
   const vision = new VisionService({ stateDir, ...config.vision, llm: config.llm })
   const tts = new TTSService({
     ...config.voice,
-    // 必须绝对路径:NapCat 进程的工作目录和 bot 不同,相对路径它会打不开
+    // 必须绝对路径:SnowLuma 进程的工作目录和 bot 不同,相对路径它打不开
     tempDir: resolve(config.voice.tempDir),
   })
 

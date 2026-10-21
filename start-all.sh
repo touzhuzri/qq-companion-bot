@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-# 一键启动:本地模型 → GPT-SoVITS(可选) → bot → NapCat(前台显示登录二维码)
-# Ctrl+C 退出时自动关停本脚本拉起的后台服务( NapCat 由它自己管理)。
+# 一键启动:本地模型 → GPT-SoVITS(可选) → bot → SnowLuma(前台,WebUI :5099)
+# Ctrl+C 退出时自动关停本脚本拉起的后台服务(SnowLuma 由它自己管理)。
 #
 # 可用的环境变量:
 #   START_LLAMA=0       不启动本地 llama-server(改用远程 endpoint 时)
 #   SOVITS_DIR=/path    设置后启动 GPT-SoVITS api_v2(:9880),否则跳过
-#   NAPCAT_CMD=napcat-qq  NapCat 启动命令
+#   SNOWLUMA_DIR=/path  SnowLuma release 目录(默认 ./SnowLuma)
+#   SNOWLUMA_CMD=...    直接指定 SnowLuma 启动命令,优先于 SNOWLUMA_DIR
 #   LOG_DIR=...         日志目录,默认 ./logs
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="${LOG_DIR:-$ROOT/logs}"
-NAPCAT_CMD="${NAPCAT_CMD:-napcat-qq}"
+SNOWLUMA_DIR="${SNOWLUMA_DIR:-$ROOT/SnowLuma}"
+SNOWLUMA_CMD="${SNOWLUMA_CMD:-}"
 mkdir -p "$LOG_DIR"
 
 PIDS=()
@@ -94,16 +96,22 @@ fi
 
 sleep 2
 if tail -n 5 "$LOG_DIR/bot.log" 2>/dev/null | grep -q "OneBot 已连接"; then
-  echo "==> bot 已连上 NapCat"
+  echo "==> bot 已连上 SnowLuma"
 else
-  echo "==> bot 启动中(NapCat 登录后会自动连上,日志: $LOG_DIR/bot.log)"
+  echo "==> bot 启动中(SnowLuma 就绪后会自动连上,日志: $LOG_DIR/bot.log)"
 fi
 
-# ---------- 4. NapCat 前台运行(二维码显示在这里) ----------
-echo "==> [4/4] 启动 NapCat(如需扫码,二维码显示在下方)"
+# ---------- 4. SnowLuma 前台运行(WebUI: http://127.0.0.1:5099) ----------
+echo "==> [4/4] 启动 SnowLuma(WebUI: http://127.0.0.1:5099)"
 echo "------------------------------------------"
-if command -v "$NAPCAT_CMD" > /dev/null 2>&1; then
-  "$NAPCAT_CMD"
+if [ -n "$SNOWLUMA_CMD" ]; then
+  # 允许带参数,例如 SNOWLUMA_CMD="node dist/index.mjs"
+  sh -c "$SNOWLUMA_CMD"
+elif [ -x "$SNOWLUMA_DIR/launcher.sh" ]; then
+  (cd "$SNOWLUMA_DIR" && ./launcher.sh)
+elif command -v snowluma > /dev/null 2>&1; then
+  snowluma
 else
-  echo "!! 找不到命令 $NAPCAT_CMD,请手动启动 NapCat。" >&2
+  echo "!! 未找到 SnowLuma。请从官方 Releases 下载并解压到 $SNOWLUMA_DIR," >&2
+  echo "   或用 SNOWLUMA_DIR / SNOWLUMA_CMD 指定启动位置。" >&2
 fi

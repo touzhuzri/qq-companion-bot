@@ -4,7 +4,7 @@ import { logger } from './logger.js'
 const WATCHDOG_TICK_MS = 15000
 
 /**
- * NapCat(OneBot 11)正向 WebSocket 客户端。
+ * SnowLuma / NapCat(OneBot 11)正向 WebSocket 客户端。
  * Node 26 自带全局 WebSocket,零依赖;access_token 走 query 参数
  * (Node 内置 WebSocket 不支持自定义 header)。
  *

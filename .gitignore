@@ -16,3 +16,8 @@ config.json
 # 模型权重
 models/*.gguf
 models/**/*.gguf
+
+# SnowLuma 源码/发行包(第三方项目,不随本仓库分发;见 README)
+SnowLuma/
+SnowLuma-main/
+SnowLuma-main.zip

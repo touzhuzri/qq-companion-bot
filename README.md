@@ -9,7 +9,7 @@
 你只需要写「这个人是谁、怎么说话」。
 
 ```
-QQ 群 @消息 ⇄ NapCat(OneBot 11) ⇄ 本服务(Node)
+QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
                                    ├─ 表情包: MD5 缓存 → 多模态模型识别
                                    ├─ presence-turn runtime: 分类→约束→剥离→抢救≤1→情绪叠态+记忆
                                    └─ LLM: 任意 OpenAI 兼容端点(默认本地 llama.cpp)
@@ -35,7 +35,7 @@ QQ 群 @消息 ⇄ NapCat(OneBot 11) ⇄ 本服务(Node)
 │   ├── persona.js        ★ 角色人设（唯一需要大改的文件）
 │   ├── bot.js            主流程：@触发 → 合并 → 冷却 → sendTurn → 分条发送
 │   ├── config.js         配置加载与校验（fail fast）
-│   ├── onebot.js         NapCat 正向 WebSocket 客户端（心跳假死检测、指数退避重连）
+│   ├── onebot.js         OneBot 11 正向 WebSocket 客户端（兼容 SnowLuma；心跳假死检测、指数退避重连）
 │   ├── messageParser.js  OneBot 消息段解析（@判定 / 文字 / 图片）
 │   ├── contextStore.js   每群滚动短上下文
 │   ├── storage.js        runtime 的 localStorage shim（按群命名空间落盘）
@@ -48,7 +48,7 @@ QQ 群 @消息 ⇄ NapCat(OneBot 11) ⇄ 本服务(Node)
 │   └── start-llama.sh    启动本地 llama-server（文本 + 视觉）
 ├── test/                 单元测试（不需要模型）
 ├── config.example.json   配置模板
-├── start-all.sh          一键启动：模型 → 语音(可选) → bot → NapCat
+├── start-all.sh          一键启动：模型 → 语音(可选) → bot → SnowLuma
 └── state/                运行数据（按群文件，首次运行自动生成）
 ```
 
@@ -57,12 +57,14 @@ QQ 群 @消息 ⇄ NapCat(OneBot 11) ⇄ 本服务(Node)
 | 依赖 | 用途 | 是否必需 |
 | --- | --- | --- |
 | Node.js ≥ 22 | 运行 bot | 必需 |
-| [NapCat](https://napcat.napneko.icu/) | QQ ⇄ OneBot 11 网关 | 必需 |
+| [SnowLuma](https://github.com/SnowLuma/SnowLuma/releases) | QQ ⇄ OneBot 11 网关（原 NapCat 的替代） | 必需 |
 | OpenAI 兼容模型端点 | 对话；视觉需要多模态 | 必需 |
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` | 本地跑模型 | 可选 |
 | GPT-SoVITS | 语音合成 | 可选 |
 
-> NapCat 走的是非官方协议，**有封号风险，请用小号**，不要用大号。
+> SnowLuma 走的是第三方 QQ 协议，**有封号风险，请用小号**，不要用大号。
+> 本仓库**不包含** SnowLuma 的源码或二进制：请自行从官方 Releases 获取。
+> SnowLuma 采用源码可见的非商业许可（不是 OSI 开源），商业使用或公开分发修改版/衍生版需事先取得书面授权。
 
 ## 快速开始
 
@@ -72,7 +74,7 @@ QQ 群 @消息 ⇄ NapCat(OneBot 11) ⇄ 本服务(Node)
 cp config.example.json config.json
 ```
 
-至少填 `botQQ`（bot 的 QQ 号），并确认 `onebot.wsUrl` 和 NapCat 的监听端口一致。
+至少填 `botQQ`（bot 的 QQ 号），并确认 `onebot.wsUrl` 和 SnowLuma 的 OneBot WebSocket 监听地址一致。
 
 ### 2. 准备模型
 
@@ -100,13 +102,21 @@ MODEL_DIR=/path/to/model MODEL_FILE=xxx.gguf MMPROJ_FILE=mmproj.gguf ./scripts/s
 
 > `apiKey` 也可以走环境变量，自行改为读取 `process.env`；不要把真实 key 提交进仓库。
 
-### 3. 配置 NapCat
+### 3. 配置 SnowLuma（QQ ⇄ OneBot 网关）
 
-1. 安装并登录 QQ 小号。
-2. 打开 NapCat 的**网络配置**，启用**正向 WebSocket 服务**，监听 `127.0.0.1:3001`
-   （要和 `config.json` 的 `onebot.wsUrl` 一致）。
-3. 如果设置了 access token，同步填进 `onebot.accessToken`。
-4. 把 bot 拉进群，设为普通成员即可；**只有 @ 它才会回话**。
+SnowLuma 需要单独安装，本项目只通过 OneBot 11 与它通信。
+
+1. 从 [SnowLuma Releases](https://github.com/SnowLuma/SnowLuma/releases) 下载对应平台的完整发行包，
+   解压到项目下的 `SnowLuma/`（已在 `.gitignore` 中，也可放到任意目录并用 `SNOWLUMA_DIR` 指定）。
+2. 启动 `launcher.sh`，打开 <http://127.0.0.1:5099>，用启动日志里的初始密码登录 WebUI。
+3. 在 WebUI 里接入并登录 QQ 小号（不要用大号）。
+4. 配置 **OneBot → WebSocket 服务端**：默认监听 `127.0.0.1:3001`，即 `config.json` 的
+   `onebot.wsUrl`。SnowLuma 默认会生成一个 access token，把它复制到 `onebot.accessToken`；
+   也可以在 SnowLuma 里清空 token，同时让 `accessToken` 保持 `""`。
+5. 把 bot 拉进群，设为普通成员即可；**只有 @ 它才会回话**。
+
+> 端口和 token 都以后台 WebUI 实际配置为准。OneBot 消息段、`send_group_msg` 等动作与 NapCat 一致，
+> bot 端不需要额外适配。
 
 ### 4. 启动
 
@@ -114,14 +124,16 @@ MODEL_DIR=/path/to/model MODEL_FILE=xxx.gguf MMPROJ_FILE=mmproj.gguf ./scripts/s
 npm start
 ```
 
-或者一键启动（模型 + 可选语音 + bot + NapCat 前台二维码）：
+或者一键启动（模型 + 可选语音 + bot + SnowLuma）：
 
 ```bash
-./start-all.sh
+SNOWLUMA_DIR=/path/to/SnowLuma ./start-all.sh
 ```
 
-设置 `SOVITS_DIR=/path/to/GPT-SoVITS/repo` 才会顺带启动语音服务；
-使用远程模型时用 `START_LLAMA=0 ./start-all.sh`。
+- `SNOWLUMA_DIR` 指向 SnowLuma 解压目录（默认 `./SnowLuma`）；也可以用 `SNOWLUMA_CMD="node dist/index.mjs"` 直接指定启动命令
+- 设置 `SOVITS_DIR=/path/to/GPT-SoVITS/repo` 才会顺带启动语音服务
+- 使用远程模型时用 `START_LLAMA=0 ./start-all.sh`
+- SnowLuma 的 WebUI 在 <http://127.0.0.1:5099>，QQ 登录与 OneBot 配置都在那里完成
 
 启动成功的标志是日志出现 `OneBot 已连接`。
 
@@ -130,8 +142,8 @@ npm start
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
 | `botQQ` | — | bot 的 QQ 号，@ 判定依据，**必填** |
-| `onebot.wsUrl` | `ws://127.0.0.1:3001` | NapCat 正向 WS 地址 |
-| `onebot.accessToken` | `""` | WS access token，没设就留空 |
+| `onebot.wsUrl` | `ws://127.0.0.1:3001` | SnowLuma OneBot WS 地址 |
+| `onebot.accessToken` | `""` | SnowLuma WebUI 里的 access token，没设就留空 |
 | `onebot.staleTimeoutMs` | `120000` | 多久没收到任何帧就判定假死并重连 |
 | `llm.endpoint` | `http://127.0.0.1:8080/v1/chat/completions` | OpenAI 兼容对话端点 |
 | `llm.apiKey` | `local` | 本地服务随便填；在线 API 填真 key |
@@ -261,12 +273,12 @@ npm run smoke -- "在干嘛呢"    # 单句自测
 }
 ```
 
-`refAudioPath` 必须是**绝对路径**：NapCat 进程的工作目录和 bot 不同，相对路径它打不开。
+`refAudioPath` 必须是**绝对路径**：SnowLuma 的工作目录和 bot 不同，相对路径它找不到。
 文字回复一定会先发；语音合成或发送失败只记日志，不会影响对话。
 
-> 不同 GPT-SoVITS 版本输出的采样率不同（v2 = 32 kHz，v4 = 48 kHz），
-> 部分 NapCat 版本对高采样率转码不稳定。若语音发送失败，先检查日志里的 TTS/转码报错，
-> 必要时在 `src/voice.js` 里补一步 ffmpeg 重采样。
+> SnowLuma 自带 ffmpeg 原生组件，会把 `voice.js` 产出的 wav 自动转成 QQ 需要的 silk，
+> 因此不需要额外安装 ffmpeg，也不用关心 GPT-SoVITS 输出是 32 kHz 还是 48 kHz。
+> 若语音发送失败，先看 bot 日志里的 TTS 报错，再看 SnowLuma WebUI 的实时日志。
 
 ## 图片识别
 
@@ -295,7 +307,7 @@ npm run smoke    # 端到端对话，需要模型在线
 
 **@ 了但没反应？**
 检查：`groups.allow` 是否包含该群、是否真的 @ 到了 bot、是否在 `cooldownMs` 冷却中、
-日志里是否有 `OneBot 已连接`。NapCat 掉线时 bot 会自动重连，日志会有提示。
+日志里是否有 `OneBot 已连接`。SnowLuma 掉线或重启时 bot 会自动重连，日志会有提示。
 
 **回复里还是有括号旁白？**
 runtime 和 `bot.js` 都会剥离括号内容。如果模型仍大量输出旁白，
@@ -315,4 +327,7 @@ runtime 也会从对话里提取并记忆用户自述的事实，多聊几轮会
 ## 致谢与许可
 
 - 对话纪律层 `vendor/presence-turn-runtime/` 来自 presence-turn-runtime，MIT License，原样内置。
-- 模板代码可自由用于个人项目；使用 NapCat / GPT-SoVITS 时请遵守各自许可与使用条款。
+- 模板代码可自由用于个人项目；使用 GPT-SoVITS 时请遵守其许可与使用条款。
+- [SnowLuma](https://github.com/SnowLuma/SnowLuma) 是独立的第三方项目，采用源码可见的非商业许可，
+  **本仓库不包含其源码或二进制**。请从官方 Releases 获取，并遵守其 LICENSE / EULA；
+  商业使用或公开分发修改版、衍生版需事先取得书面授权。
