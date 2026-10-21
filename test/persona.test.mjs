@@ -11,6 +11,8 @@ test('persona exposes the fields the runtime needs', () => {
   assert.ok(PERSONA.systemPrompt.length > 0)
   assert.equal(typeof PERSONA.voiceHint, 'string')
   assert.ok(PERSONA.voiceHint.length > 0)
+  assert.equal(PERSONA.name, '茜特菈莉')
+  assert.ok(!PERSONA.systemPrompt.includes('TODO'))
 })
 
 test('persona keeps the shared conversation guardrails by default', () => {

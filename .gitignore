@@ -13,6 +13,9 @@ state-smoke/
 config.json
 .env
 
+# 本地角色原始设定,只保留提炼后的 src/persona.js
+人设.txt
+
 # 模型权重
 models/*.gguf
 models/**/*.gguf
