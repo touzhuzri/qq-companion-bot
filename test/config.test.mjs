@@ -50,6 +50,40 @@ test('provider presets are not overridden by local defaults', () => {
   }
 })
 
+test('zhipu text can use an independent local vision model', () => {
+  withConfig(
+    {
+      ...base,
+      llm: { provider: 'zhipu', apiKeys: ['key-one', 'key-two'] },
+      vision: {
+        enabled: true,
+        llm: { provider: 'local', model: 'qwen3-vl-4b' },
+      },
+    },
+    (path) => {
+      const config = loadConfig(path)
+      assert.equal(config.llm.protocol, 'anthropic')
+      assert.equal(config.llm.endpoint, 'https://open.bigmodel.cn/api/anthropic')
+      assert.deepEqual(config.llm.apiKeys, ['key-one', 'key-two'])
+      assert.equal(config.vision.llm.protocol, 'openai')
+      assert.equal(config.vision.llm.endpoint, 'http://127.0.0.1:8080/v1/chat/completions')
+    },
+  )
+})
+
+test('rejects falling back to an Anthropic endpoint for vision', () => {
+  withConfig(
+    {
+      ...base,
+      llm: { provider: 'zhipu', apiKeys: ['key-one'] },
+      vision: { enabled: true },
+    },
+    (path) => {
+      assert.throws(() => loadConfig(path), /vision\.llm/)
+    },
+  )
+})
+
 test('keeps vision llm independent from the text llm', () => {
   withConfig(
     {

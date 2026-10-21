@@ -12,6 +12,7 @@ import { judgeJoin, keywordHit } from './ambient.js'
 import { VoiceControl } from './control.js'
 import { deliverReply } from './reply.js'
 import { assertLlmUsable } from './llm.js'
+import { prepareRuntimeLlm } from './llm-runtime.js'
 import { sendTurn } from '../vendor/presence-turn-runtime/src/index.js'
 
 /**
@@ -38,6 +39,7 @@ async function main() {
 
   assertLlmUsable(config.llm, 'llm')
   if (config.vision.enabled) assertLlmUsable(config.vision.llm, 'vision.llm')
+  const { llm: runtimeLlm, bridge } = await prepareRuntimeLlm(config)
 
   installStorageShim(stateDir)
   const contextStore = new ContextStore(stateDir, config.history.maxItems)
@@ -179,7 +181,7 @@ async function main() {
       const accepted = await judgeJoin({
         recent,
         persona: PERSONA,
-        llm: config.llm,
+        llm: runtimeLlm,
         timeoutMs: config.ambient.judgeTimeoutMs,
       })
       if (!accepted) {
@@ -234,7 +236,7 @@ async function main() {
           ? ambientHistory(turn.groupId)
           : contextStore.getHistory(turn.groupId),
         pack: PERSONA,
-        llm: config.llm,
+        llm: runtimeLlm,
       })
     } catch (err) {
       // 不往群里灌错误文案,保持安静,只记日志
@@ -313,6 +315,7 @@ async function main() {
     logger.info('退出中…')
     client.close()
     voiceControl.stop()
+    bridge?.stop()
     flushNow()
     process.exit(0)
   }

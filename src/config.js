@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { assertLlmUsable, resolveLlm, resolveVisionLlm } from './llm.js'
+import { assertLlmUsable, isAnthropic, resolveLlm, resolveVisionLlm } from './llm.js'
 
 export const DEFAULTS = {
   onebot: {
@@ -18,6 +18,15 @@ export const DEFAULTS = {
   llm: {
     provider: 'local',
     model: 'qwen3-vl-4b',
+    /** anthropic/zhipu 协议用多 key 轮换;openai 协议只用 apiKey */
+    apiKeys: [],
+    anthropicVersion: '2023-06-01',
+    timeoutMs: 60000,
+    /** 本地 Anthropic→OpenAI 桥,仅 text provider 为 anthropic/zhipu 时启动 */
+    bridge: {
+      host: '127.0.0.1',
+      port: 8090,
+    },
   },
   groups: {
     /** 空 = 所有群都响应 */
@@ -100,9 +109,10 @@ export function loadConfig(configPath = './config.json') {
     throw new Error(`配置文件解析失败: ${err.message}`)
   }
 
-  const merged = deepMerge(DEFAULTS, fileRaw)
+  // 深拷贝默认值,避免多次 loadConfig 时把解析结果写回 DEFAULTS
+  const merged = deepMerge(structuredClone(DEFAULTS), fileRaw)
   merged.llm = resolveLlm(merged.llm)
-  merged.vision.llm = resolveVisionLlm(merged)
+  merged.vision = { ...merged.vision, llm: resolveVisionLlm(merged) }
 
   const missing = []
   if (!merged.onebot?.wsUrl) missing.push('onebot.wsUrl')
@@ -113,7 +123,15 @@ export function loadConfig(configPath = './config.json') {
 
   // 文本模型与视觉模型各自校验,任一不可用都在启动时失败
   assertLlmUsable(merged.llm, 'llm')
-  if (merged.vision?.enabled) assertLlmUsable(merged.vision.llm, 'vision.llm')
+  if (merged.vision?.enabled) {
+    if (isAnthropic(merged.vision.llm)) {
+      throw new Error(
+        'vision.llm 必须是 OpenAI 兼容的多模态端点(如本地 Qwen)。' +
+          '智谱 GLM 的 Anthropic 端点只用于文字,请单独填写 vision.llm 或关闭 vision.enabled。',
+      )
+    }
+    assertLlmUsable(merged.vision.llm, 'vision.llm')
+  }
 
   if (merged.ambient?.enabled && !(merged.ambient.groups || []).length) {
     throw new Error(

@@ -2,6 +2,35 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { assertLlmUsable, resolveLlm, resolveVisionLlm } from '../src/llm.js'
 
+test('zhipu provider resolves the Anthropic endpoint and multiple keys', () => {
+  const previous = [process.env.ZHIPU_API_KEY, process.env.ZHIPU_API_KEY_2]
+  process.env.ZHIPU_API_KEY = 'zhipu-one'
+  process.env.ZHIPU_API_KEY_2 = 'zhipu-two'
+  try {
+    const llm = resolveLlm({ provider: 'zhipu' })
+    assert.equal(llm.protocol, 'anthropic')
+    assert.equal(llm.endpoint, 'https://open.bigmodel.cn/api/anthropic')
+    assert.equal(llm.model, 'glm-4.5-flash')
+    assert.deepEqual(llm.apiKeys, ['zhipu-one', 'zhipu-two'])
+  } finally {
+    if (previous[0] === undefined) delete process.env.ZHIPU_API_KEY
+    else process.env.ZHIPU_API_KEY = previous[0]
+    if (previous[1] === undefined) delete process.env.ZHIPU_API_KEY_2
+    else process.env.ZHIPU_API_KEY_2 = previous[1]
+  }
+})
+
+test('anthropic endpoints require at least one key', () => {
+  assert.throws(
+    () =>
+      assertLlmUsable(
+        { protocol: 'anthropic', endpoint: 'https://x', model: 'm', apiKeys: [] },
+        'llm',
+      ),
+    /apiKey/,
+  )
+})
+
 test('local provider fills the local endpoint and key', () => {
   const llm = resolveLlm({ provider: 'local', model: 'qwen3' })
   assert.equal(llm.endpoint, 'http://127.0.0.1:8080/v1/chat/completions')

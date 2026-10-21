@@ -12,7 +12,7 @@
 QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
                                    ├─ 表情包: MD5 缓存 → 多模态模型识别
                                    ├─ presence-turn runtime: 分类→约束→剥离→抢救≤1→情绪叠态+记忆
-                                   └─ LLM: 任意 OpenAI 兼容端点(默认本地 llama.cpp)
+                                   └─ LLM: 文字(智谱 GLM-4.5 / OpenAI 兼容) + 视觉(本地 Qwen)
                                           └─ 可选: GPT-SoVITS 语音(api_v2)
 ```
 
@@ -37,7 +37,9 @@ QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
 │   ├── persona.js        ★ 角色人设（唯一需要大改的文件）
 │   ├── bot.js            主流程：触发/旁听 → sendTurn → 延迟 → 分段发送
 │   ├── config.js         配置加载与校验（fail fast）
-│   ├── llm.js            文字/视觉端点解析（local / ollama / openai / 兼容端点）
+│   ├── llm.js            文字/视觉端点解析（local / ollama / openai / anthropic / zhipu）
+│   ├── llm-runtime.js    按协议准备运行时端点（Anthropic 时自动起桥）
+│   ├── anthropic-bridge.js  Anthropic Messages ⇄ OpenAI Chat 本地桥（多 key 轮换）
 │   ├── split.js          按标点和长度切分台词（移植自 qikou，MIT）
 │   ├── reply.js          延迟、语音/文字投递与分段发送
 │   ├── ambient.js        群聊旁听的相关度判定
@@ -65,8 +67,9 @@ QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
 | --- | --- | --- |
 | Node.js ≥ 22 | 运行 bot | 必需 |
 | [SnowLuma](https://github.com/SnowLuma/SnowLuma/releases) | QQ ⇄ OneBot 11 网关（原 NapCat 的替代） | 必需 |
-| OpenAI 兼容模型端点 | 对话；视觉需要多模态 | 必需 |
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` | 本地跑模型 | 可选 |
+| 文字模型端点 | 对话（OpenAI 或 Anthropic 协议均可） | 必需 |
+| 多模态模型端点 | 读表情包（默认本地 Qwen） | 可选 |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` | 本地跑 Qwen 视觉模型 | 可选 |
 | GPT-SoVITS | 语音合成 | 可选 |
 
 > SnowLuma 走的是第三方 QQ 协议，**有封号风险，请用小号**，不要用大号。
@@ -81,11 +84,34 @@ QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
 cp config.example.json config.json
 ```
 
-至少填 `botQQ`（bot 的 QQ 号），并确认 `onebot.wsUrl` 和 SnowLuma 的 OneBot WebSocket 监听地址一致。
+至少填 `botQQ`（bot 的 QQ 号）、`llm.apiKeys`（两个智谱 key，或改用环境变量），
+并确认 `onebot.wsUrl` 和 SnowLuma 的 OneBot WebSocket 监听地址一致。
 
 ### 2. 准备模型
 
-**本地（默认）**：把两个 gguf 放进 `models/qwen3-vl-4b/`，然后：
+**文字模型：智谱 GLM-4.5（默认示例）**
+
+智谱的 Claude 兼容入口是 Anthropic 协议，直接填进 OpenAI 链路会失败。
+本项目会自动启动一个本地桥（默认 `127.0.0.1:8090`）做协议转换：
+
+```json
+"llm": {
+  "provider": "zhipu",
+  "endpoint": "https://open.bigmodel.cn/api/anthropic",
+  "model": "glm-4.5-flash",
+  "apiKeys": ["账号一的 key", "账号二的 key"]
+}
+```
+
+- `glm-4.5-flash` 目前免费；也可以换 `glm-4.5-air` 或 `glm-4.5`
+- 两个 key 会轮询使用，遇到 429/401/5xx 自动换下一个，并对出错的 key 短期冷却
+- 不想把 key 写进文件，可以留空 `apiKeys`，改用环境变量
+  `ZHIPU_API_KEY` / `ZHIPU_API_KEY_2`
+- 本地桥只监听 127.0.0.1，运行时拿到的是桥的临时 token，不是你的智谱 key
+
+**视觉模型：读表情包（本地 Qwen）**
+
+表情包识别走独立端点，默认是本机 `models/qwen3-vl-4b/` 下的 Qwen3-VL：
 
 ```bash
 ./scripts/start-llama.sh
@@ -97,17 +123,25 @@ cp config.example.json config.json
 MODEL_DIR=/path/to/model MODEL_FILE=xxx.gguf MMPROJ_FILE=mmproj.gguf ./scripts/start-llama.sh
 ```
 
-**远程 / 在线 API**：不用启动 llama-server，把 `config.json` 的 `llm` 改成对应端点即可：
+对应的 `vision.llm`：
 
 ```json
-"llm": {
-  "endpoint": "https://your-provider/v1/chat/completions",
-  "apiKey": "sk-...",
-  "model": "your-model"
+"vision": {
+  "enabled": true,
+  "llm": {
+    "provider": "local",
+    "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+    "apiKey": "local",
+    "model": "qwen3-vl-4b"
+  }
 }
 ```
 
-> `apiKey` 也可以走环境变量，自行改为读取 `process.env`；不要把真实 key 提交进仓库。
+> 智谱的 Anthropic 端点不能拿来做视觉；文字用智谱时必须单独配置 `vision.llm`
+> （或把 `vision.enabled` 设为 `false`）。启动时会检查并在配置错误时直接报错。
+
+**其他组合**：文字也可以改用本地 llama.cpp / Ollama / OpenAI，只要把 `llm`
+换成对应的 provider；视觉端点则可以是任意 OpenAI 兼容的多模态服务。
 
 ### 3. 配置 SnowLuma（QQ ⇄ OneBot 网关）
 
@@ -120,7 +154,8 @@ SnowLuma 需要单独安装，本项目只通过 OneBot 11 与它通信。
 4. 配置 **OneBot → WebSocket 服务端**：默认监听 `127.0.0.1:3001`，即 `config.json` 的
    `onebot.wsUrl`。SnowLuma 默认会生成一个 access token，把它复制到 `onebot.accessToken`；
    也可以在 SnowLuma 里清空 token，同时让 `accessToken` 保持 `""`。
-5. 把 bot 拉进群，设为普通成员即可；**只有 @ 它才会回话**。
+5. 把 bot 拉进群，设为普通成员即可；默认**只有 @ 它才会回话**，
+   未 @ 旁听需要另外开启 `ambient`（见下文）。
 
 > 端口和 token 都以后台 WebUI 实际配置为准。OneBot 消息段、`send_group_msg` 等动作与 NapCat 一致，
 > bot 端不需要额外适配。
@@ -139,7 +174,8 @@ SNOWLUMA_DIR=/path/to/SnowLuma ./start-all.sh
 
 - `SNOWLUMA_DIR` 指向 SnowLuma 解压目录（默认 `./SnowLuma`）；也可以用 `SNOWLUMA_CMD="node dist/index.mjs"` 直接指定启动命令
 - 设置 `SOVITS_DIR=/path/to/GPT-SoVITS/repo` 才会顺带启动语音服务
-- 使用远程模型时用 `START_LLAMA=0 ./start-all.sh`
+- 文字模型默认走智谱远程端点；`start-all.sh` 仍会启动本地 Qwen 供表情包识别。
+  不需要本地视觉模型时用 `START_LLAMA=0 ./start-all.sh`（表情包会退化为通用描述）
 - SnowLuma 的 WebUI 在 <http://127.0.0.1:5099>，QQ 登录与 OneBot 配置都在那里完成
 - bot 的语音开关在 <http://127.0.0.1:5100>，可以在运行中随时切换文字/语音模式
 
@@ -153,12 +189,16 @@ SNOWLUMA_DIR=/path/to/SnowLuma ./start-all.sh
 | `onebot.wsUrl` | `ws://127.0.0.1:3001` | SnowLuma OneBot WS 地址 |
 | `onebot.accessToken` | `""` | SnowLuma WebUI 里的 access token，没设就留空 |
 | `onebot.staleTimeoutMs` | `120000` | 多久没收到任何帧就判定假死并重连 |
-| `llm.provider` | `local` | `local` / `ollama` / `openai` / `openai-compatible` |
-| `llm.endpoint` | `http://127.0.0.1:8080/v1/chat/completions` | 文字模型端点 |
-| `llm.apiKey` | `local` | 本地服务随便填；`openai` 自动读 `OPENAI_API_KEY` |
-| `llm.model` | `qwen3-vl-4b` | 文字模型名 |
-| `vision.llm` | `null` | 独立的视觉端点对象；不填则回退到 `llm` |
-| `vision.enabled` | `true` | 是否识别图片；视觉端点必须是多模态的 |
+| `llm.provider` | `local` | `local` / `ollama` / `openai` / `anthropic` / `zhipu` / `openai-compatible` |
+| `llm.endpoint` | 取决于 provider | 文字模型端点；智谱填 `https://open.bigmodel.cn/api/anthropic` |
+| `llm.apiKey` | — | 单 key（OpenAI 兼容端点用） |
+| `llm.apiKeys` | `[]` | 多 key 轮换（`zhipu` / `anthropic`）；也可用 `ZHIPU_API_KEY` / `ZHIPU_API_KEY_2` |
+| `llm.model` | 取决于 provider | 文字模型名；智谱免费版用 `glm-4.5-flash` |
+| `llm.anthropicVersion` | `2023-06-01` | Anthropic 协议版本头 |
+| `llm.timeoutMs` | `60000` | 上游请求超时 |
+| `llm.bridge.host` / `port` | `127.0.0.1` / `8090` | Anthropic→OpenAI 本地桥地址，仅本机可访问 |
+| `vision.llm` | `null` | 独立的视觉端点对象；文字用 Anthropic 协议时**必须**单独配置 |
+| `vision.enabled` | `true` | 是否用 Qwen 等视觉模型读表情包 |
 | `groups.allow` | `[]` | 允许响应的群号列表，**空 = 所有群** |
 | `trigger.debounceMs` | `2000` | 触发后等待合并后续消息的窗口 |
 | `reply.delayMinMs` / `delayMaxMs` | `4000` / `8000` | API 返回后、回复前的随机等待，每轮只等一次 |
@@ -332,8 +372,10 @@ npm run smoke -- "在干嘛呢"    # 单句自测
 
 ```json
 "llm": {
-  "provider": "openai",
-  "model": "gpt-4o-mini"
+  "provider": "zhipu",
+  "endpoint": "https://open.bigmodel.cn/api/anthropic",
+  "model": "glm-4.5-flash",
+  "apiKeys": ["账号一的 key", "账号二的 key"]
 },
 "vision": {
   "enabled": true,
@@ -351,11 +393,25 @@ npm run smoke -- "在干嘛呢"    # 单句自测
 | `local` | `http://127.0.0.1:8080/v1/chat/completions` | `local` |
 | `ollama` | `http://127.0.0.1:11434/v1/chat/completions` | `ollama` |
 | `openai` | `https://api.openai.com/v1/chat/completions` | 环境变量 `OPENAI_API_KEY` |
+| `anthropic` | `https://api.anthropic.com` | 环境变量 `ANTHROPIC_API_KEY` |
+| `zhipu` | `https://open.bigmodel.cn/api/anthropic` | `ZHIPU_API_KEY` / `ZHIPU_API_KEY_2` |
 | `openai-compatible` | 必须自己填 | `LLM_API_KEY` 或自己填 |
 
-- `vision.llm` 不填则回退到文字 `llm`；填了就**完全独立**，不会字段级混用。
+- `vision.llm` 填了就**完全独立**，不会字段级混用；不填则回退到文字 `llm`。
+- 文字用 `anthropic` / `zhipu` 时**不能**回退到文字端点做视觉（协议不同）；
+  必须单独配置 OpenAI 兼容的多模态 `vision.llm`，或关闭 `vision.enabled`。
 - 视觉端点必须是多模态模型；纯文本模型请把 `vision.enabled` 设为 `false`。
 - 视觉请求按图片 MD5 缓存，同一张表情包只识别一次。
+
+### 智谱多账号与本地桥
+
+- `provider: "zhipu"` / `"anthropic"` 时，bot 启动会在 `llm.bridge.port`（默认 8090）
+  起一个本地桥，把运行时的 OpenAI 请求翻译成 Anthropic Messages，再转回 OpenAI 响应。
+- 桥只监听 `127.0.0.1`，并要求一个进程内随机 token；你的智谱 key 不会传给运行时或日志。
+- `apiKeys` 数组按顺序轮询；某个 key 返回 429/401/5xx 时自动换下一个，
+  并对该 key 冷却一段时间（429 冷却 30s，鉴权失败冷却 5 分钟）。
+- 请求日志只记录 `key#1`、`key#2`，不打印 key 内容。
+- `npm run smoke` 也会自动起桥，所以调试人设不需要另外运行代理。
 
 ## 语音（GPT-SoVITS，可选）
 
@@ -397,12 +453,14 @@ bot 启动后会提供一个本地控制页：<http://127.0.0.1:5100>。
 > 因此不需要额外安装 ffmpeg，也不用关心 GPT-SoVITS 输出是 32 kHz 还是 48 kHz。
 > 若语音发送失败，先看 bot 日志里的 TTS 报错，再看 SnowLuma WebUI 的实时日志。
 
-## 图片识别
+## 表情包识别（视觉模型）
 
-- 收到图片时，会把图片下载下来、按 MD5 缓存描述，同一张图只识别一次。
-- 识别请求发往 `llm.endpoint`，因此端点必须支持多模态输入；
-  纯文本模型请把 `vision.enabled` 设为 `false`。
+- 群里发表情包/图片时，bot 会下载图片、按 MD5 缓存描述，同一张图只识别一次。
+- 识别请求发往 `vision.llm.endpoint`（默认本地 Qwen3-VL），**不会**走文字模型；
+  这样智谱只负责说话，Qwen 只负责读图。
 - 识别失败会降级成「一张表情包（识别失败）」，不会中断对话。
+- 本地 Qwen 视觉服务用 `./scripts/start-llama.sh` 启动；没有启动时，
+  bot 仍可正常聊天，只是表情包会变成通用描述。
 
 ## 测试
 

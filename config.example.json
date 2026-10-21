@@ -6,10 +6,16 @@
     "staleTimeoutMs": 120000
   },
   "llm": {
-    "provider": "local",
-    "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
-    "apiKey": "local",
-    "model": "qwen3-vl-4b"
+    "provider": "zhipu",
+    "endpoint": "https://open.bigmodel.cn/api/anthropic",
+    "model": "glm-4.5-flash",
+    "apiKeys": ["", ""],
+    "anthropicVersion": "2023-06-01",
+    "timeoutMs": 60000,
+    "bridge": {
+      "host": "127.0.0.1",
+      "port": 8090
+    }
   },
   "vision": {
     "enabled": true,
