@@ -48,15 +48,15 @@ export const DEFAULTS = {
   reply: {
     /** API 返回后,回复前只等一次 4~8 秒 */
     delayMinMs: 0,
-    delayMaxMs: 4000,
+    delayMaxMs: 2000,
     /** 按长度切分:单条最少/理想/最多字数,单轮最多几条 */
     segmentMinChars: 6,
     segmentTargetChars: 12,
     segmentMaxChars: 20,
     segmentMaxMessages: 4,
     /** 同一条回复的多个分段之间,模拟打字的短间隔 */
-    segmentGapMinMs: 1000,
-    segmentGapMaxMs: 2200,
+    segmentGapMinMs: 3000,
+    segmentGapMaxMs: 6000,
   },
   ambient: {
     /** 旁听接话默认关闭;开启后只对 groups 里的群生效 */

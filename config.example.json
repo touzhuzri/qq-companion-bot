@@ -40,13 +40,13 @@
   },
   "reply": {
     "delayMinMs": 0,
-    "delayMaxMs": 4000,
+    "delayMaxMs": 2000,
     "segmentMinChars": 6,
     "segmentTargetChars": 12,
     "segmentMaxChars": 20,
     "segmentMaxMessages": 4,
-    "segmentGapMinMs": 1000,
-    "segmentGapMaxMs": 2200
+    "segmentGapMinMs": 3000,
+    "segmentGapMaxMs": 6000
   },
   "ambient": {
     "enabled": false,

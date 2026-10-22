@@ -21,7 +21,7 @@ QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
 - **零 npm 依赖**：Node ≥ 22 自带 WebSocket / fetch，clone 下来直接跑。
 - **@ 回复 + 群聊旁听 + 私聊**：群聊默认只回 @；可在指定群开启旁听；私聊需显式 allowlist。
 - **没有回复冷却**：连续消息（默认 2 秒内、同一人）仍会合并，但不会因为「刚回过」而丢弃新一轮。
-- **像真人一样分条**：API 返回后随机等 0–4 秒再开口，长句按标点/长度切成多条，段间 1.0–2.2 秒。
+- **像真人一样分条**：首条 0–2 秒后发出，后续每条随机等 3–6 秒，长句按标点/长度切成多条。
 - **按群隔离**：上下文、情绪叠态、记忆、表情包缓存都按群号分开落盘，互不串台。
 - **对话纪律层**：禁止括号动作旁白、禁止仆人式讨好、禁止「你先忙」式打发；
   模型跑偏时会自动纠正一次（salvage ≤ 1）。
@@ -250,12 +250,12 @@ SNOWLUMA_DIR=/path/to/SnowLuma \
 | `privateChat.enabled` | `false` | 是否响应私聊 |
 | `privateChat.allow` | `[]` | 允许私聊的 QQ 号；开启时必填，空列表会启动报错 |
 | `trigger.debounceMs` | `2000` | 触发后等待合并后续消息的窗口 |
-| `reply.delayMinMs` / `delayMaxMs` | `0` / `4000` | API 返回后、回复前的随机等待，每轮只等一次 |
+| `reply.delayMinMs` / `delayMaxMs` | `0` / `2000` | 首条回复前的随机等待，每轮只等一次 |
 | `reply.segmentMinChars` | `6` | 单条最少字数（太短的尾巴会并回上一条） |
 | `reply.segmentTargetChars` | `12` | 单条理想字数，接近时优先换条 |
 | `reply.segmentMaxChars` | `20` | 单条硬上限；越小越容易看出分段 |
 | `reply.segmentMaxMessages` | `4` | 一轮最多分几条 |
-| `reply.segmentGapMinMs` / `reply.segmentGapMaxMs` | `1000` / `2200` | 分段之间的随机间隔 |
+| `reply.segmentGapMinMs` / `reply.segmentGapMaxMs` | `3000` / `6000` | 首条之后，每条分段之间的随机间隔 |
 | `ambient.enabled` | `false` | 是否开启群聊旁听接话 |
 | `ambient.groups` | `[]` | **指定**允许旁听的群号；开启时必填 |
 | `ambient.keywords` | `[]` | 关键词预筛；空则直接交给模型判定 |
@@ -374,9 +374,9 @@ npm run smoke -- "在干嘛呢"    # 单句自测
 
 一轮文字的发送过程：
 
-1. 模型返回后，**只等一次**随机 0–4 秒（`reply.delayMinMs` / `delayMaxMs`）；
+1. 模型返回后，首条**只等一次**随机 0–2 秒（`reply.delayMinMs` / `delayMaxMs`）；
 2. 把回复按句号、问号、逗号等切成语义完整的短句；
-3. 依次发送，分段之间随机等 1.0–2.2 秒（`segmentGapMinMs` / `segmentGapMaxMs`）；
+3. 首条之后，每条随机等 3–6 秒再发（`segmentGapMinMs` / `segmentGapMaxMs`）；
 4. 没有回复冷却：上一轮刚结束，下一轮 @ 仍然会正常处理。
 
 切分逻辑移植自 [qikou（气口）](https://github.com/Grabrun/qikou)（MIT）：
@@ -533,7 +533,7 @@ bot 启动后会提供一个本地控制页：<http://127.0.0.1:5100>。
 ### 语音模式的行为
 
 - **只发语音**：不再发送文字，也不发第一条文字提示；
-- **不加等待**：跳过 0–4 秒和分段间隔，TTS 就绪后直接发；
+- **不加等待**：跳过 0–2 秒和分段间隔，TTS 就绪后直接发；
 - **失败降级**：TTS 合成或发送失败时，自动按文字模式重发（此时恢复随机等待和分段）；
 - 念的内容是整轮台词拼接后的文本，仍会写入对话历史。
 
