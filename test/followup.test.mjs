@@ -43,10 +43,20 @@ test('a NO mutes the user for the configured duration', () => {
   assert.equal(store.isMuted('g:u', 501), false)
 })
 
-test('defaults are off and keep a five-minute window', () => {
+test('defaults are off, with a short attention window and two turns', () => {
   assert.equal(FOLLOW_UP_DEFAULTS.enabled, false)
-  assert.equal(FOLLOW_UP_DEFAULTS.windowMs, 300000)
-  assert.equal(FOLLOW_UP_DEFAULTS.maxTurns, 6)
+  assert.equal(FOLLOW_UP_DEFAULTS.windowMs, 20000)
+  assert.equal(FOLLOW_UP_DEFAULTS.maxTurns, 2)
+  assert.equal(FOLLOW_UP_DEFAULTS.minReplyGapMs, 8000)
+})
+
+test('follow-up replies are spaced out inside the window', () => {
+  const store = tracker({ windowMs: 20000, maxTurns: 2, minReplyGapMs: 8000 })
+  store.arm('g:u', 0)
+  assert.equal(store.canReply('g:u', 0), true)
+  store.noteReply('g:u', 100)
+  assert.equal(store.canReply('g:u', 200), false)
+  assert.equal(store.canReply('g:u', 8100), true)
 })
 
 test('judgeFollowUp accepts YES and rejects NO or errors', async () => {

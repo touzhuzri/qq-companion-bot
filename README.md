@@ -251,11 +251,12 @@ SNOWLUMA_DIR=/path/to/SnowLuma \
 | `privateChat.enabled` | `false` | 是否响应私聊 |
 | `privateChat.allow` | `[]` | 允许私聊的 QQ 号；开启时必填，空列表会启动报错 |
 | `followUp.enabled` | `false` | 是否启用 @ 后的续聊判断 |
-| `followUp.windowMs` | `300000` | @ 回复后继续观察同一人的时间窗口 |
-| `followUp.maxTurns` | `6` | 一次 @ 最多续聊几轮 |
-| `followUp.debounceMs` | `2000` | 同一人连续发消息时的判定等待 |
+| `followUp.windowMs` | `20000` | @ 回复后特别留意同一人的时间窗口（20 秒） |
+| `followUp.maxTurns` | `2` | 一次 @ 最多续聊几轮 |
+| `followUp.debounceMs` | `1500` | 同一人连续发消息时的判定等待 |
 | `followUp.judgeTimeoutMs` | `8000` | 续聊判断请求超时 |
-| `followUp.muteAfterNoMs` | `120000` | 判断「不是在和我说话」后静默多久 |
+| `followUp.minReplyGapMs` | `8000` | 两次续聊回复之间的最小间隔 |
+| `followUp.muteAfterNoMs` | `60000` | 判断「不是在和我说话」后静默多久 |
 | `trigger.debounceMs` | `2000` | 触发后等待合并后续消息的窗口 |
 | `reply.delayMinMs` / `delayMaxMs` | `0` / `2000` | 首条回复前的随机等待，每轮只等一次 |
 | `reply.segmentMinChars` | `6` | 单条最少字数（太短的尾巴会并回上一条） |
@@ -438,27 +439,33 @@ npm run smoke -- "在干嘛呢"    # 单句自测
 
 ## 被 @ 后的续聊判断
 
-**@ 一定会回复**，不受任何判断影响。回复成功后，bot 会给这个人在该群开一个续聊窗口：
+**@ 一定会回复**，不受任何判断影响。回复成功后，bot 会给这个人在该群开一个
+**20 秒的特别留意窗口**：
 
 ```json
 "followUp": {
   "enabled": true,
-  "windowMs": 300000,
-  "maxTurns": 6,
-  "debounceMs": 2000,
+  "windowMs": 20000,
+  "maxTurns": 2,
+  "debounceMs": 1500,
   "judgeTimeoutMs": 8000,
-  "muteAfterNoMs": 120000
+  "minReplyGapMs": 8000,
+  "muteAfterNoMs": 60000
 }
 ```
 
-窗口内，这个人再发**不带 @** 的消息时，bot 不会直接回复，而是先判断：
+窗口内，这个人再发**不带 @** 的消息时，bot 不会每句都接，而是先判断：
 
-- 是不是在回应她上一句、继续问她、接她的话
-- 还是在和其他人说话、换话题、自言自语、只是群里的普通发言
+- 是不是明显在对她说：回应她上一句、叫她、问她
+- 内容对你们的对话有没有实际意义，关系/话题相关度高不高
+- 还是普通应答、玩笑、自言自语、对别人说的话
 
-判断为 YES 才继续回；判断为 NO 就停止，并让这个用户静默
-`muteAfterNoMs`（默认 2 分钟），避免马上又被群聊旁听捡起来。
-窗口过期或续聊轮次用完，续聊自动结束；想继续聊需要重新 @。
+只有相关度高才回；一次 @ 最多续聊 2 轮，两次续聊回复至少间隔 8 秒。
+判断为 NO 就停止，并让这个用户静默 1 分钟，避免马上又被群聊旁听捡起来。
+20 秒窗口过期或 2 轮用完，续聊结束；想继续聊需要重新 @。
+
+闲聊不靠续聊硬接，而是交给群聊旁听：其他群友在合适的话题下，
+由 `ambient` 按自己的间隔判断要不要搭一句。
 
 设计目的：一次 @ 不会让 bot 对这个人后续的每句话都机械回复，
 减少刷屏和 `@` 引发的长对话，降低账号风险，同时保证 @ 本身不会被忽略。

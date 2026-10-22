@@ -203,6 +203,7 @@ async function main() {
     const recent = recentByGroup.get(groupId) || []
     const last = recent[recent.length - 1]
     if (!last || String(last.userId) !== String(userId)) return
+    if (!followUps.canReply(key)) return
 
     const history = contextStore.getHistory(groupId)
     const lastBotReply = [...history].reverse().find((item) => item.role === 'assistant')?.content

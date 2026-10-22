@@ -47,11 +47,12 @@ export const DEFAULTS = {
      * 是不是还在和角色说话,是才继续回。
      */
     enabled: false,
-    windowMs: 5 * 60_000,
-    maxTurns: 6,
-    debounceMs: 2000,
+    windowMs: 20_000,
+    maxTurns: 2,
+    debounceMs: 1500,
     judgeTimeoutMs: 8000,
-    muteAfterNoMs: 2 * 60_000,
+    minReplyGapMs: 8000,
+    muteAfterNoMs: 60_000,
   },
   trigger: {
     /** 合并同一人连续消息的窗口,不是回复冷却 */

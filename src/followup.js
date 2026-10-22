@@ -3,15 +3,17 @@ import { askYesNo, buildTranscript } from './ambient.js'
 export const FOLLOW_UP_DEFAULTS = {
   /** 是否启用 @ 后的续聊判断 */
   enabled: false,
-  /** @ 回复成功后,这个窗口内继续观察同一人的非 @ 发言 */
-  windowMs: 5 * 60_000,
-  /** 一次 @ 最多续聊几轮,避免无限对话 */
-  maxTurns: 6,
+  /** @ 回复成功后,这个窗口内特别留意同一人的非 @ 发言 */
+  windowMs: 20_000,
+  /** 一次 @ 最多续聊几轮,避免每句话都接 */
+  maxTurns: 2,
   /** 同一人连续发消息时,等这么久再判断 */
   debounceMs: 2000,
   judgeTimeoutMs: 8000,
+  /** 续聊回复之间的最小间隔,避免对方每句都接 */
+  minReplyGapMs: 8000,
   /** 判断为「不是在和我说话」后,这段时间内不再对该用户尝试旁听 */
-  muteAfterNoMs: 2 * 60_000,
+  muteAfterNoMs: 60_000,
 }
 
 export class FollowUpTracker {
@@ -36,6 +38,7 @@ export class FollowUpTracker {
     this.#active.set(key, {
       until: now + this.#config.windowMs,
       remaining: Math.max(1, Number(this.#config.maxTurns) || 1),
+      lastReplyAt: null,
     })
     this.#muted.delete(key)
   }
@@ -50,11 +53,19 @@ export class FollowUpTracker {
     return true
   }
 
-  /** 续聊成功一轮:延长窗口并消耗次数 */
+  /** 距离上一轮续聊回复是否已经够久 */
+  canReply(key, now = Date.now()) {
+    const state = this.#active.get(key)
+    if (!state) return false
+    if (state.lastReplyAt == null) return true
+    return now - state.lastReplyAt >= (Number(this.#config.minReplyGapMs) || 0)
+  }
+
+  /** 续聊成功一轮:消耗次数并记录间隔,但不延长 20 秒窗口 */
   noteReply(key, now = Date.now()) {
     const state = this.#active.get(key)
     if (!state) return
-    state.until = now + this.#config.windowMs
+    state.lastReplyAt = now
     state.remaining -= 1
     if (state.remaining <= 0) this.#active.delete(key)
   }
@@ -96,8 +107,11 @@ export async function judgeFollowUp({
     '你是 QQ 群聊的旁听者,只负责判断对方是不是还在和角色说话。',
     `角色名:${persona?.name || '角色'}。`,
     '对方刚刚 @ 过角色,现在又发了一条没有 @ 的消息。',
-    '判断这条消息是否仍在和角色说话:回应角色上一句、继续问角色、接角色的话。',
-    '不适合:在和其他人说话、换新话题、自言自语、只是群里的一般发言。',
+    '不要每句都接。只有同时满足下面几条才回答 YES:',
+    '1. 明显是在对角色说:回应角色上一句、叫角色、问角色;',
+    '2. 内容对角色或你们正在聊的事有实际意义,关系/话题相关度高;',
+    '3. 不是可以忽略的应答、玩笑、自言自语或对别人说的话。',
+    '普通闲聊、单字附和、突然换话题、在和其他人聊天,一律 NO。',
     lastBotReply ? `角色上一句:${lastBotReply}` : '',
     '只回答 YES 或 NO,不要解释。',
   ]
