@@ -35,6 +35,14 @@
     "enabled": false,
     "allow": []
   },
+  "followUp": {
+    "enabled": false,
+    "windowMs": 300000,
+    "maxTurns": 6,
+    "debounceMs": 2000,
+    "judgeTimeoutMs": 8000,
+    "muteAfterNoMs": 120000
+  },
   "trigger": {
     "debounceMs": 2000
   },

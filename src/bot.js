@@ -10,6 +10,7 @@ import { OneBotClient } from './onebot.js'
 import { parseMessage } from './messageParser.js'
 import { PERSONA } from './persona.js'
 import { judgeJoin, keywordHit } from './ambient.js'
+import { FollowUpTracker, judgeFollowUp } from './followup.js'
 import { VoiceControl } from './control.js'
 import { deliverReply } from './reply.js'
 import { assertLlmUsable } from './llm.js'
@@ -48,6 +49,9 @@ async function main() {
   if (config.control.enabled) voiceControl.start()
 
   const ambientGroups = new Set((config.ambient.groups || []).map(String))
+  const followUps = new FollowUpTracker(config.followUp)
+  /** @type {Map<string, NodeJS.Timeout>} key: groupId:userId */
+  const followUpTimers = new Map()
 
   // 全局回合锁:sendTurn 内部有多个 await,串行化避免跨群串状态
   let tail = Promise.resolve()
@@ -86,12 +90,21 @@ async function main() {
 
       recordRecent(parsed)
 
+      const followUpKey = `${parsed.groupId}:${parsed.senderId}`
       if (!parsed.triggered) {
+        // 刚 @ 过她的人,先判断是不是还在和她聊;其他人走群聊旁听
+        if (followUps.isActive(followUpKey)) {
+          scheduleFollowUp(parsed)
+          return
+        }
+        if (followUps.isMuted(followUpKey)) return
         scheduleAmbient(parsed)
         return
       }
 
       cancelAmbient(parsed.groupId)
+      cancelFollowUpTimer(followUpKey)
+      followUps.clear(followUpKey)
     }
 
     const sessionKey = parsed.isPrivate
@@ -164,6 +177,64 @@ async function main() {
     ambientTimers.delete(groupId)
   }
 
+  function cancelFollowUpTimer(key) {
+    const timer = followUpTimers.get(key)
+    if (!timer) return
+    clearTimeout(timer)
+    followUpTimers.delete(key)
+  }
+
+  function scheduleFollowUp(parsed) {
+    const key = `${parsed.groupId}:${parsed.senderId}`
+    cancelFollowUpTimer(key)
+    const timer = setTimeout(() => {
+      followUpTimers.delete(key)
+      maybeFollowUp(key, parsed.groupId, parsed.senderId).catch((err) =>
+        logger.warn(`续聊处理失败: ${err?.message}`),
+      )
+    }, config.followUp.debounceMs)
+    followUpTimers.set(key, timer)
+  }
+
+  async function maybeFollowUp(key, groupId, userId) {
+    if (!followUps.isActive(key)) return
+    if (hasPendingTurn(`group:${groupId}`)) return
+
+    const recent = recentByGroup.get(groupId) || []
+    const last = recent[recent.length - 1]
+    if (!last || String(last.userId) !== String(userId)) return
+
+    const history = contextStore.getHistory(groupId)
+    const lastBotReply = [...history].reverse().find((item) => item.role === 'assistant')?.content
+    const accepted = await judgeFollowUp({
+      recent,
+      lastBotReply,
+      persona: PERSONA,
+      llm: runtimeLlm,
+      timeoutMs: config.followUp.judgeTimeoutMs,
+    })
+
+    if (!accepted) {
+      followUps.mute(key)
+      logger.info(`群 ${groupId} | ${userId} 续聊判定:不接`)
+      return
+    }
+
+    logger.info(`群 ${groupId} | ${userId} 续聊判定:接话`)
+    const turn = {
+      isPrivate: false,
+      targetId: groupId,
+      sessionKey: `group:${groupId}`,
+      contextKey: groupId,
+      groupId,
+      userId,
+      nickname: last.nickname,
+      texts: last.text ? [last.text] : [],
+      images: last.images || [],
+    }
+    await withTurnLock(() => runTurn(turn, { followUp: true }))
+  }
+
   function hasPendingTurn(sessionKey) {
     for (const key of pendingTurns.keys()) {
       if (key.startsWith(`${sessionKey}:`)) return true
@@ -228,14 +299,15 @@ async function main() {
     }, config.trigger.debounceMs)
   }
 
-  async function runTurn(turn, { ambient = false } = {}) {
+  async function runTurn(turn, { ambient = false, followUp = false } = {}) {
     const userMessage = await composeUserMessage(turn)
     if (!userMessage.trim()) return
 
     setStorageNamespace(turn.sessionKey)
     const label = turn.isPrivate ? `私聊 ${turn.targetId}` : `群 ${turn.groupId}`
+    const marker = ambient ? '[旁听] ' : followUp ? '[续聊] ' : ''
     logger.info(
-      `${label} | ${ambient ? '[旁听] ' : ''}${turn.nickname || turn.userId}: ` +
+      `${label} | ${marker}${turn.nickname || turn.userId}: ` +
         userMessage.replace(/\n/g, ' ⏎ '),
     )
 
@@ -284,6 +356,16 @@ async function main() {
     if (delivery.mode === 'none') {
       logger.info('分段后无有效台词,保持沉默')
       return
+    }
+
+    if (!turn.isPrivate && delivery.segments.length) {
+      const followUpKey = `${turn.groupId}:${turn.userId}`
+      if (followUp) {
+        followUps.noteReply(followUpKey)
+      } else if (!ambient) {
+        // @ 回复成功后开启续聊观察窗口
+        followUps.arm(followUpKey)
+      }
     }
 
     logDone(result, delivery)

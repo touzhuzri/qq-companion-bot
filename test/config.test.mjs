@@ -109,6 +109,21 @@ test('keeps vision llm independent from the text llm', () => {
   )
 })
 
+test('follow-up requires a positive window and turn budget', () => {
+  withConfig(
+    { ...base, followUp: { enabled: true, windowMs: 0, maxTurns: 6 } },
+    (path) => {
+      assert.throws(() => loadConfig(path), /followUp\.windowMs/)
+    },
+  )
+  withConfig(
+    { ...base, followUp: { enabled: true, windowMs: 1000, maxTurns: 0 } },
+    (path) => {
+      assert.throws(() => loadConfig(path), /followUp\.maxTurns/)
+    },
+  )
+})
+
 test('private chat requires an explicit allow list when enabled', () => {
   withConfig({ ...base, privateChat: { enabled: true, allow: [] } }, (path) => {
     assert.throws(() => loadConfig(path), /privateChat\.allow/)

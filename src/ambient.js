@@ -23,8 +23,41 @@ export function buildTranscript(recent = [], limit = 8) {
 }
 
 /**
- * 让文字模型判断最后一条群消息是否值得以角色身份接一句。
- * 调用失败按“不接”处理:旁听是锦上添花,不能因为它打断正常回复。
+ * 让文字模型回答 YES / NO。失败一律按 NO 处理:
+ * 旁听和续聊都是锦上添花,不能因为判定失败打断正常回复。
+ */
+export async function askYesNo({ system, user, llm, timeoutMs = 8000, label = '判定' }) {
+  if (!llm?.endpoint) return false
+  try {
+    const response = await fetch(llm.endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${llm.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: llm.model,
+        temperature: 0,
+        max_tokens: 8,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const payload = await response.json()
+    const verdict = String(payload?.choices?.[0]?.message?.content ?? '').trim()
+    return VERDICT_YES.test(verdict)
+  } catch (err) {
+    logger.warn(`${label}失败,本轮不接话: ${err?.message}`)
+    return false
+  }
+}
+
+/**
+ * 群聊旁听:判断最后一条非 @ 消息是否值得以角色身份接一句。
  */
 export async function judgeJoin({ recent, persona, llm, timeoutMs = 8000 } = {}) {
   const transcript = buildTranscript(recent, 8)
@@ -44,30 +77,11 @@ export async function judgeJoin({ recent, persona, llm, timeoutMs = 8000 } = {})
     .filter(Boolean)
     .join('\n')
 
-  try {
-    const response = await fetch(llm.endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${llm.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: llm.model,
-        temperature: 0,
-        max_tokens: 8,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: `最近群聊:\n${transcript}\n\n只回答 YES 或 NO。` },
-        ],
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    })
-    if (!response.ok) throw new Error(`旁听判定 HTTP ${response.status}`)
-    const payload = await response.json()
-    const verdict = String(payload?.choices?.[0]?.message?.content ?? '').trim()
-    return VERDICT_YES.test(verdict)
-  } catch (err) {
-    logger.warn(`旁听判定失败,本轮不接话: ${err?.message}`)
-    return false
-  }
+  return askYesNo({
+    system,
+    user: `最近群聊:\n${transcript}\n\n只回答 YES 或 NO。`,
+    llm,
+    timeoutMs,
+    label: '旁听判定',
+  })
 }

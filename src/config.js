@@ -41,6 +41,18 @@ export const DEFAULTS = {
     enabled: false,
     allow: [],
   },
+  followUp: {
+    /**
+     * @ 必回;回复成功后,在窗口内继续判断同一人的非 @ 发言
+     * 是不是还在和角色说话,是才继续回。
+     */
+    enabled: false,
+    windowMs: 5 * 60_000,
+    maxTurns: 6,
+    debounceMs: 2000,
+    judgeTimeoutMs: 8000,
+    muteAfterNoMs: 2 * 60_000,
+  },
   trigger: {
     /** 合并同一人连续消息的窗口,不是回复冷却 */
     debounceMs: 2000,
@@ -140,6 +152,15 @@ export function loadConfig(configPath = './config.json') {
       )
     }
     assertLlmUsable(merged.vision.llm, 'vision.llm')
+  }
+
+  if (merged.followUp?.enabled) {
+    if (!(Number(merged.followUp.windowMs) > 0)) {
+      throw new Error('followUp.windowMs 必须大于 0')
+    }
+    if (!(Number(merged.followUp.maxTurns) > 0)) {
+      throw new Error('followUp.maxTurns 必须大于 0')
+    }
   }
 
   if (merged.privateChat?.enabled && !(merged.privateChat.allow || []).length) {
