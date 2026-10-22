@@ -47,8 +47,8 @@ export const DEFAULTS = {
   },
   reply: {
     /** API 返回后,回复前只等一次 4~8 秒 */
-    delayMinMs: 4000,
-    delayMaxMs: 8000,
+    delayMinMs: 0,
+    delayMaxMs: 4000,
     /** 按长度切分:单条最少/理想/最多字数,单轮最多几条 */
     segmentMinChars: 6,
     segmentTargetChars: 12,

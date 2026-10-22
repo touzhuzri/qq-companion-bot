@@ -39,8 +39,8 @@
     "debounceMs": 2000
   },
   "reply": {
-    "delayMinMs": 4000,
-    "delayMaxMs": 8000,
+    "delayMinMs": 0,
+    "delayMaxMs": 4000,
     "segmentMinChars": 6,
     "segmentTargetChars": 12,
     "segmentMaxChars": 20,
