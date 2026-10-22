@@ -7,7 +7,8 @@ const RETRYABLE_STATUS = new Set([401, 403, 408, 409, 425, 429, 500, 502, 503, 5
 const COOLDOWN_MS = {
   auth: 5 * 60_000,
   rate: 30_000,
-  server: 10_000,
+  // 超时/网络异常往往意味着这个 key 当前不可用,冷却久一点避免每轮都先撞它
+  server: 60_000,
 }
 
 /**

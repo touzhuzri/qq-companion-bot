@@ -21,7 +21,7 @@ export const DEFAULTS = {
     /** anthropic/zhipu 协议用多 key 轮换;openai 协议只用 apiKey */
     apiKeys: [],
     anthropicVersion: '2023-06-01',
-    timeoutMs: 60000,
+    timeoutMs: 15000,
     /** 聊天时关闭 thinking,避免推理块吃掉回复预算 */
     thinking: 'disabled',
     /** 上游 max_tokens 下限;运行时请求更小时抬到这个值 */

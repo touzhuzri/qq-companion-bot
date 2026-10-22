@@ -11,7 +11,7 @@
     "model": "glm-4.5-flash",
     "apiKeys": ["", ""],
     "anthropicVersion": "2023-06-01",
-    "timeoutMs": 60000,
+    "timeoutMs": 15000,
     "thinking": "disabled",
     "maxTokens": 512,
     "bridge": {

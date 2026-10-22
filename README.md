@@ -239,7 +239,7 @@ SNOWLUMA_DIR=/path/to/SnowLuma \
 | `llm.apiKeys` | `[]` | 多 key 轮换（`zhipu` / `anthropic`）；也可用 `ZHIPU_API_KEY` / `ZHIPU_API_KEY_2` |
 | `llm.model` | 取决于 provider | 文字模型名；智谱免费版用 `glm-4.5-flash` |
 | `llm.anthropicVersion` | `2023-06-01` | Anthropic 协议版本头 |
-| `llm.timeoutMs` | `60000` | 上游请求超时 |
+| `llm.timeoutMs` | `15000` | 单个上游请求超时；超时后自动换下一个 key |
 | `llm.thinking` | `disabled` | `disabled` 关闭 GLM 的 thinking，避免推理块吃掉回复 token |
 | `llm.maxTokens` | `512` | 上游 `max_tokens` 下限；运行时请求更小时抬到这个值 |
 | `llm.bridge.host` / `port` | `127.0.0.1` / `8090` | Anthropic→OpenAI 本地桥地址，仅本机可访问 |
@@ -580,6 +580,12 @@ sudo sysctl -w kernel.yama.ptrace_scope=0
 然后在 SnowLuma WebUI 里重新加载/重连 QQ 进程。需要持久化可写入
 `/etc/sysctl.d/99-snowluma.conf`；注意这会降低本机进程隔离，建议只在个人机器上使用。
 Docker 部署则需要 `cap_add: SYS_PTRACE` 和 `security_opt: seccomp=unconfined`。
+
+**为什么等了一分钟才回复？**
+先看日志有没有 `Anthropic 上游 key#N 请求异常: ... timeout`。桥默认每个 key 15 秒超时，
+超时后换下一个 key；之前默认 60 秒，遇到不稳定的 key 就会像“没回复”。
+如果某个 key 经常超时，检查智谱控制台里它的额度/状态，或把它从 `apiKeys` 里移除。
+也可以把 `llm.timeoutMs` 再调低（例如 10000）。
 
 **@ 了但没反应？**
 检查：`groups.allow` 是否包含该群、是否真的 @ 到了 bot、日志里是否有 `OneBot 已连接`。
