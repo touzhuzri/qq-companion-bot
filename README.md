@@ -38,6 +38,7 @@ QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
 │   ├── bot.js            主流程：触发/旁听 → sendTurn → 延迟 → 分段发送
 │   ├── config.js         配置加载与校验（fail fast）
 │   ├── llm.js            文字/视觉端点解析（local / ollama / openai / anthropic / zhipu）
+│   ├── net.js            强制 IPv4 优先，避免 IPv6 不通时请求空等超时
 │   ├── llm-runtime.js    按协议准备运行时端点（Anthropic 时自动起桥）
 │   ├── anthropic-bridge.js  Anthropic Messages ⇄ OpenAI Chat 本地桥（多 key 轮换）
 │   ├── split.js          按标点和长度切分台词（移植自 qikou，MIT）
@@ -584,6 +585,11 @@ Docker 部署则需要 `cap_add: SYS_PTRACE` 和 `security_opt: seccomp=unconfin
 **为什么等了一分钟才回复？**
 先看日志有没有 `Anthropic 上游 key#N 请求异常: ... timeout`。桥默认每个 key 15 秒超时，
 超时后换下一个 key；之前默认 60 秒，遇到不稳定的 key 就会像“没回复”。
+
+另一个常见原因是本机 IPv6 不通：`open.bigmodel.cn` 有 AAAA 记录，Node 默认优先 IPv6，
+会一直等到超时。bot 启动时已经通过 `src/net.js` 强制 IPv4 优先；如果日志里还是大量超时，
+可以先用 `curl -4` / `curl -6` 分别测一下。确实需要 IPv6 时设置 `BOT_DNS_ORDER=verbatim`。
+
 如果某个 key 经常超时，检查智谱控制台里它的额度/状态，或把它从 `apiKeys` 里移除。
 也可以把 `llm.timeoutMs` 再调低（例如 10000）。
 

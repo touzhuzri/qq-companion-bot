@@ -6,6 +6,7 @@
  *   npm run smoke            # 默认三连问,看人设与叠态
  *   npm run smoke -- "你好"   # 单句自测
  */
+import '../src/net.js'
 import { resolve } from 'node:path'
 import { loadConfig } from '../src/config.js'
 import { prepareRuntimeLlm } from '../src/llm-runtime.js'
