@@ -206,10 +206,28 @@ async function main() {
     if (!followUps.canReply(key)) return
 
     const history = contextStore.getHistory(groupId)
-    const lastBotReply = [...history].reverse().find((item) => item.role === 'assistant')?.content
+    let lastAssistantIndex = -1
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].role === 'assistant') {
+        lastAssistantIndex = i
+        break
+      }
+    }
+    const lastBotReply =
+      lastAssistantIndex >= 0 ? String(history[lastAssistantIndex].content || '') : ''
+    let lastUserMessage = ''
+    for (let i = lastAssistantIndex - 1; i >= 0; i--) {
+      if (history[i].role === 'user') {
+        lastUserMessage = String(history[i].content || '')
+        break
+      }
+    }
+
     const verdict = await judgeFollowUp({
       recent,
+      lastUserMessage,
       lastBotReply,
+      currentText: last.text || '[图片]',
       persona: PERSONA,
       llm: runtimeLlm,
       timeoutMs: config.followUp.judgeTimeoutMs,

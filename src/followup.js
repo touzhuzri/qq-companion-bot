@@ -122,7 +122,9 @@ export class FollowUpTracker {
  */
 export async function judgeFollowUp({
   recent,
+  lastUserMessage,
   lastBotReply,
+  currentText,
   persona,
   llm,
   timeoutMs = 8000,
@@ -134,12 +136,17 @@ export async function judgeFollowUp({
     '你是 QQ 群聊的旁听者,只负责判断对方是不是还在和角色说话。',
     `角色名:${persona?.name || '角色'}。`,
     '对方刚刚 @ 过角色,现在又发了一条没有 @ 的消息。',
-    '不要每句都接。只有同时满足下面几条才回答 YES:',
-    '1. 明显是在对角色说:回应角色上一句、叫角色、问角色;',
-    '2. 内容对角色或你们正在聊的事有实际意义,关系/话题相关度高;',
-    '3. 不是可以忽略的应答、玩笑、自言自语或对别人说的话。',
-    '普通闲聊、单字附和、突然换话题、在和其他人聊天,一律 NO。',
-    lastBotReply ? `角色上一句:${lastBotReply}` : '',
+    '不要每句都接。满足下面任意一条才回答 YES:',
+    '1. 明显在对角色说:回应角色上一句、叫角色、问角色;',
+    '2. 在追问角色刚提到的内容,例如「谁」「什么」「男的女的」「后来呢」「为什么」「真的吗」;',
+    '3. 话题与角色或你们刚才的对话直接相关,需要角色回应。',
+    '以下一律 NO:',
+    '- 在和其他人说话,或突然换到无关的新话题;',
+    '- 只是哈哈/嗯/哦/好的/表情等无需回应的附和;',
+    '- 自言自语、群里的普通闲聊。',
+    lastUserMessage ? `对方刚才说:${lastUserMessage}` : '',
+    lastBotReply ? `角色刚才回:${lastBotReply}` : '',
+    currentText ? `对方现在说:${currentText}` : '',
     '只回答 YES 或 NO,不要解释。',
   ]
     .filter(Boolean)

@@ -81,6 +81,36 @@ test('follow-up replies are spaced out inside the window', () => {
   assert.equal(store.canReply('g:u', 8100), true)
 })
 
+test('judge prompt includes the previous exchange and current question', async () => {
+  const originalFetch = globalThis.fetch
+  let body = null
+  globalThis.fetch = async (_url, options) => {
+    body = JSON.parse(options.body)
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: 'YES' } }] }),
+      { status: 200 },
+    )
+  }
+
+  try {
+    await judgeFollowUp({
+      recent: [{ nickname: '图注资历', text: '谁啊男的女的' }],
+      lastUserMessage: '有没有什么忘不了的人',
+      lastBotReply: '一个故人。算了，不提。',
+      currentText: '谁啊男的女的',
+      persona: { name: '茜特菈莉' },
+      llm: { endpoint: 'http://mock', apiKey: 'k', model: 'm' },
+    })
+    const system = body.messages[0].content
+    assert.match(system, /有没有什么忘不了的人/)
+    assert.match(system, /一个故人/)
+    assert.match(system, /谁啊男的女的/)
+    assert.match(system, /男的女的/)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('judgeFollowUp accepts YES and rejects NO or errors', async () => {
   const originalFetch = globalThis.fetch
   const llm = { endpoint: 'http://mock', apiKey: 'k', model: 'm' }
