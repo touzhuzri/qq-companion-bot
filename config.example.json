@@ -37,11 +37,12 @@
   },
   "followUp": {
     "enabled": false,
-    "windowMs": 20000,
-    "maxTurns": 2,
+    "windowMs": 300000,
+    "maxTurns": 7,
     "debounceMs": 1500,
     "judgeTimeoutMs": 8000,
-    "minReplyGapMs": 8000,
+    "minReplyGapMs": 10000,
+    "maxMisses": 2,
     "muteAfterNoMs": 60000
   },
   "trigger": {

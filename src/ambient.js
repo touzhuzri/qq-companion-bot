@@ -23,8 +23,8 @@ export function buildTranscript(recent = [], limit = 8) {
 }
 
 /**
- * 让文字模型回答 YES / NO。失败一律按 NO 处理:
- * 旁听和续聊都是锦上添花,不能因为判定失败打断正常回复。
+ * 让文字模型回答 YES / NO。
+ * @returns {Promise<boolean|null>} true=YES, false=NO, null=请求失败
  */
 export async function askYesNo({ system, user, llm, timeoutMs = 8000, label = '判定' }) {
   if (!llm?.endpoint) return false
@@ -52,7 +52,7 @@ export async function askYesNo({ system, user, llm, timeoutMs = 8000, label = '�
     return VERDICT_YES.test(verdict)
   } catch (err) {
     logger.warn(`${label}失败,本轮不接话: ${err?.message}`)
-    return false
+    return null
   }
 }
 
@@ -77,11 +77,12 @@ export async function judgeJoin({ recent, persona, llm, timeoutMs = 8000 } = {})
     .filter(Boolean)
     .join('\n')
 
-  return askYesNo({
+  const verdict = await askYesNo({
     system,
     user: `最近群聊:\n${transcript}\n\n只回答 YES 或 NO。`,
     llm,
     timeoutMs,
     label: '旁听判定',
   })
+  return verdict === true
 }

@@ -207,7 +207,7 @@ async function main() {
 
     const history = contextStore.getHistory(groupId)
     const lastBotReply = [...history].reverse().find((item) => item.role === 'assistant')?.content
-    const accepted = await judgeFollowUp({
+    const verdict = await judgeFollowUp({
       recent,
       lastBotReply,
       persona: PERSONA,
@@ -215,9 +215,19 @@ async function main() {
       timeoutMs: config.followUp.judgeTimeoutMs,
     })
 
-    if (!accepted) {
-      followUps.mute(key)
-      logger.info(`群 ${groupId} | ${userId} 续聊判定:不接`)
+    if (verdict === null) {
+      logger.warn(`群 ${groupId} | ${userId} 续聊判定失败,保持活跃态`)
+      return
+    }
+
+    if (verdict === false) {
+      const misses = followUps.missCount(key) + 1
+      const closed = followUps.noteMiss(key)
+      logger.info(
+        `群 ${groupId} | ${userId} 续聊判定:不接 ` +
+          `(${Math.min(misses, config.followUp.maxMisses)}/${config.followUp.maxMisses})` +
+          (closed ? ',退出活跃态' : ''),
+      )
       return
     }
 

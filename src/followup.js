@@ -3,16 +3,18 @@ import { askYesNo, buildTranscript } from './ambient.js'
 export const FOLLOW_UP_DEFAULTS = {
   /** 是否启用 @ 后的续聊判断 */
   enabled: false,
-  /** @ 回复成功后,这个窗口内特别留意同一人的非 @ 发言 */
-  windowMs: 20_000,
-  /** 一次 @ 最多续聊几轮,避免每句话都接 */
-  maxTurns: 2,
+  /** @ 回复成功后进入活跃态,Hermes 式窗口 */
+  windowMs: 5 * 60_000,
+  /** 一次 @ 最多续聊几轮 */
+  maxTurns: 7,
   /** 同一人连续发消息时,等这么久再判断 */
-  debounceMs: 2000,
+  debounceMs: 1500,
   judgeTimeoutMs: 8000,
-  /** 续聊回复之间的最小间隔,避免对方每句都接 */
-  minReplyGapMs: 8000,
-  /** 判断为「不是在和我说话」后,这段时间内不再对该用户尝试旁听 */
+  /** 续聊回复之间的最小间隔 */
+  minReplyGapMs: 10_000,
+  /** 连续多少次判断为低相关后退出活跃态 */
+  maxMisses: 2,
+  /** 退出活跃态后,这段时间内不再对该用户尝试旁听 */
   muteAfterNoMs: 60_000,
 }
 
@@ -39,6 +41,7 @@ export class FollowUpTracker {
       until: now + this.#config.windowMs,
       remaining: Math.max(1, Number(this.#config.maxTurns) || 1),
       lastReplyAt: null,
+      misses: 0,
     })
     this.#muted.delete(key)
   }
@@ -61,13 +64,34 @@ export class FollowUpTracker {
     return now - state.lastReplyAt >= (Number(this.#config.minReplyGapMs) || 0)
   }
 
-  /** 续聊成功一轮:消耗次数并记录间隔,但不延长 20 秒窗口 */
+  /** 续聊成功一轮:消耗次数、清空连败计数并记录间隔,但不延长窗口 */
   noteReply(key, now = Date.now()) {
     const state = this.#active.get(key)
     if (!state) return
     state.lastReplyAt = now
     state.remaining -= 1
+    state.misses = 0
     if (state.remaining <= 0) this.#active.delete(key)
+  }
+
+  /**
+   * 记一次低相关。连续达到 maxMisses 才退出活跃态并静默。
+   * @returns {boolean} 是否已经退出
+   */
+  noteMiss(key, now = Date.now()) {
+    const state = this.#active.get(key)
+    if (!state) return true
+    state.misses = (state.misses || 0) + 1
+    if (state.misses >= (Number(this.#config.maxMisses) || 1)) {
+      this.#active.delete(key)
+      this.#muted.set(key, now + this.#config.muteAfterNoMs)
+      return true
+    }
+    return false
+  }
+
+  missCount(key) {
+    return this.#active.get(key)?.misses || 0
   }
 
   clear(key) {
@@ -93,6 +117,9 @@ export class FollowUpTracker {
 /**
  * @ 之后的续聊判断:最后一条非 @ 消息是否还在和角色说话。
  */
+/**
+ * @returns {Promise<boolean|null>} true=继续聊, false=低相关, null=判定失败
+ */
 export async function judgeFollowUp({
   recent,
   lastBotReply,
@@ -101,7 +128,7 @@ export async function judgeFollowUp({
   timeoutMs = 8000,
 } = {}) {
   const transcript = buildTranscript(recent, 8)
-  if (!transcript || !llm?.endpoint) return false
+  if (!transcript || !llm?.endpoint) return null
 
   const system = [
     '你是 QQ 群聊的旁听者,只负责判断对方是不是还在和角色说话。',

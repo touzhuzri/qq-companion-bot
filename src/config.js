@@ -47,11 +47,12 @@ export const DEFAULTS = {
      * 是不是还在和角色说话,是才继续回。
      */
     enabled: false,
-    windowMs: 20_000,
-    maxTurns: 2,
+    windowMs: 5 * 60_000,
+    maxTurns: 7,
     debounceMs: 1500,
     judgeTimeoutMs: 8000,
-    minReplyGapMs: 8000,
+    minReplyGapMs: 10_000,
+    maxMisses: 2,
     muteAfterNoMs: 60_000,
   },
   trigger: {
@@ -161,6 +162,9 @@ export function loadConfig(configPath = './config.json') {
     }
     if (!(Number(merged.followUp.maxTurns) > 0)) {
       throw new Error('followUp.maxTurns 必须大于 0')
+    }
+    if (!(Number(merged.followUp.maxMisses) > 0)) {
+      throw new Error('followUp.maxMisses 必须大于 0')
     }
   }
 
