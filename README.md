@@ -42,6 +42,8 @@ QQ 群 @消息 ⇄ SnowLuma(OneBot 11) ⇄ 本服务(Node)
 │   ├── anthropic-bridge.js  Anthropic Messages ⇄ OpenAI Chat 本地桥（多 key 轮换）
 │   ├── split.js          按标点和长度切分台词（移植自 qikou，MIT）
 │   ├── reply.js          延迟、语音/文字投递与分段发送
+│   ├── expand.js         回复太短时的长度兜底（按亲密度决定扩写目标）
+│   ├── speech.js         纯台词清理（去括号旁白）
 │   ├── ambient.js        群聊旁听的相关度判定
 │   ├── control.js        语音开关本地控制页
 │   ├── onebot.js         OneBot 11 正向 WebSocket 客户端（兼容 SnowLuma；心跳假死检测、指数退避重连）
@@ -300,6 +302,7 @@ export const PERSONA = mergePack({
 | `userName` | 角色对用户的称呼 | 默认 `你` 即可 |
 | `voiceHint` | 语气总纲，权重很高 | 写具象姿态，别写「温柔善良」这类标签 |
 | `systemPrompt` | 人设正文，见下方六段结构 | 最重要的部分 |
+| `format` | 回复句数/字数目标 | `minSentences` / `maxSentences` / `minSentenceChars` / `minTotal` / `maxTotal`；也用于长度兜底 |
 | `facts.name` | 已知的用户称呼 | 留空即不强制点名 |
 | `facts.drink` | 已知的饮品偏好 | 留空即不强制提 |
 | `affect.attachmentFloor` | 情绪依恋地板 0~1 | 越高越不容易被一句否定打回原点 |
@@ -383,6 +386,19 @@ npm run smoke -- "在干嘛呢"    # 单句自测
 - 太短的尾巴会并回上一条，避免出现「嗯。」这种单字气泡。
 
 觉得太碎或太慢，调 `reply` 下的参数即可，不需要改代码。
+
+### 回复长度兜底
+
+模型（尤其 GLM-4.5-flash）有时只回十几个字，仅靠提示词压不住。bot 在分段前会检查长度：
+
+- **态度好**（attachment/trust 高、hurt/guard 低）：低于 `persona.format.minTotal`
+  时再调用一次模型扩写，目标 2～3 句、约 35～180 字；
+- **态度偏冷淡**：低于 18 字时扩写，至少保留一句完整的话；
+- 扩写只尝试一次，失败或超时就保留原回复，不会让整轮失败；
+- 日志会显示 `回复扩写 15 -> 42 字 (warm)` 和最终的 `segments/lengths`。
+
+想让她说得更多，可以调高 `persona.format.minTotal`，或换用 `glm-4.5` / `glm-4.5-air`
+（实测比 flash 更愿意展开）。
 
 ## 群聊旁听（未被 @ 时接话）
 
@@ -584,10 +600,15 @@ runtime 也会从对话里提取并记忆用户自述的事实，多聊几轮会
 再确认文字模型能正常响应判定请求。
 
 **回复为什么像小作文？**
-先看日志里的 `segments=` 和 `lengths=`：如果只有 1 段，说明模型生成的字数本来就低于
-`reply.segmentMaxChars`（默认 20）。可以把上限再调小，或调高
-`persona.format.minTotal`。GLM-4.5-flash 本身偏简洁；想更饱满可以换 `glm-4.5` /
-`glm-4.5-air`，或在 `src/persona.js` 的 `format` 里把 `minSentences` / `minTotal` 调高。
+先看日志里的 `回复扩写`、`segments=` 和 `lengths=`：
+
+- 有扩写但仍然只有 1 段：说明字数低于 `reply.segmentMaxChars`（默认 20），把上限调小即可
+- 没有扩写且很短：检查情绪值是否被判定为“冷淡”；冷淡回合的目标下限只有 18 字
+- 扩写失败：看日志里的 `回复扩写失败`，通常是超时或上游限流；原回复会保留
+
+GLM-4.5-flash 本身偏简洁；想更饱满可以换 `glm-4.5` / `glm-4.5-air`，或在
+`src/persona.js` 的 `format` 里把 `minSentences` / `minTotal` 调高。扩写层只作用一次，
+不会无限追加。
 如果模型一次就输出了一大段且没有标点，只会按长度硬切，读起来仍会偏机械，
 可以在 persona 的例句里示范短句。
 

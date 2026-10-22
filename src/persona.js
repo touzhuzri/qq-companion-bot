@@ -67,7 +67,7 @@ export const PERSONA = mergePack({
     maxSentences: 3,
     minSentenceChars: 15,
     maxSentenceChars: 45,
-    minTotal: 60,
+    minTotal: 35,
     maxTotal: 180,
   },
   facts: {

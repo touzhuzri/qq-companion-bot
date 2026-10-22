@@ -13,20 +13,9 @@ import { VoiceControl } from './control.js'
 import { deliverReply } from './reply.js'
 import { assertLlmUsable } from './llm.js'
 import { prepareRuntimeLlm } from './llm-runtime.js'
+import { pureSpeech } from './speech.js'
+import { expandIfNeeded } from './expand.js'
 import { sendTurn } from '../vendor/presence-turn-runtime/src/index.js'
-
-/**
- * 只留纯台词:优先 runtime 已剥过句首旁白的 spokenText,
- * 再把残余的任意括号内容全部去掉——动作描写不允许出现在 QQ 消息里。
- */
-function pureSpeech(reply) {
-  const base = String(reply?.spokenText || reply?.displayText || reply?.content || '')
-  return base
-    .replace(/^[（(][^）)]*[）)]\s*/, '')
-    .replace(/[（(][^）)]*[）)]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
 
 main().catch((err) => {
   logger.error(`启动失败: ${err?.stack ?? err?.message}`)
@@ -272,8 +261,17 @@ async function main() {
       return
     }
 
-    const delivery = await deliverReply({
+    // 模型偏简洁时补一次扩写:态度好扩到两三句,冷淡时至少一句完整的话
+    const expanded = await expandIfNeeded({
       lines,
+      userMessage,
+      affect: result.presence?.affect,
+      persona: PERSONA,
+      llm: runtimeLlm,
+    })
+
+    const delivery = await deliverReply({
+      lines: expanded.lines,
       target: { isPrivate: turn.isPrivate, targetId: turn.targetId },
       contextKey: turn.contextKey,
       config,
